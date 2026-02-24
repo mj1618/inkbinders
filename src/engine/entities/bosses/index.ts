@@ -1,0 +1,10 @@
+export { FootnoteGiant } from "./FootnoteGiant";
+export { DEFAULT_FOOTNOTE_GIANT_PARAMS } from "./FootnoteGiantParams";
+export type { FootnoteGiantParams } from "./FootnoteGiantParams";
+export { MisprintSeraph } from "./MisprintSeraph";
+export { DEFAULT_MISPRINT_SERAPH_PARAMS } from "./MisprintSeraphParams";
+export type { MisprintSeraphParams } from "./MisprintSeraphParams";
+export { IndexEater } from "./IndexEater";
+export { DEFAULT_INDEX_EATER_PARAMS } from "./IndexEaterParams";
+export type { IndexEaterParams } from "./IndexEaterParams";
+export type { DamageZone } from "./types";
