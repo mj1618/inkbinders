@@ -12,6 +12,7 @@ import {
   PLAYER_SPRITE_CONFIGS,
   PLAYER_ANIMATIONS,
   STATE_TO_ANIMATION,
+  type StateAnimMapping,
 } from "@/engine/entities/PlayerSprites";
 import { DEFAULT_GRAVITY, MAX_FALL_SPEED } from "@/lib/constants";
 import { SURFACE_PROPERTIES } from "@/engine/physics/Surfaces";
@@ -81,6 +82,15 @@ export interface PlayerParams {
   crouchSquashScaleX: number;
   crouchSquashScaleY: number;
   scaleReturnSpeed: number;
+  // New squash-stretch events
+  apexFloatScaleX: number;
+  apexFloatScaleY: number;
+  fastFallScaleX: number;
+  fastFallScaleY: number;
+  runFootstrikeScaleX: number;
+  runFootstrikeScaleY: number;
+  slideBoostScaleX: number;
+  slideBoostScaleY: number;
   // Landing parameters
   softLandThresholdFrames: number;
   hardLandThresholdFrames: number;
@@ -128,26 +138,34 @@ export const DEFAULT_PLAYER_PARAMS: PlayerParams = {
   dashCooldownFrames: 18,
   dashSpeedBoost: 1.4,
   dashSpeedBoostDecayRate: 800,
-  // Squash-stretch defaults
-  squashStretchEnabled: false,
-  jumpLaunchScaleX: 0.7,
-  jumpLaunchScaleY: 1.4,
-  softLandScaleX: 1.4,
-  softLandScaleY: 0.6,
-  hardLandScaleX: 1.6,
-  hardLandScaleY: 0.5,
-  dashStartScaleX: 1.5,
-  dashStartScaleY: 0.7,
-  dashEndScaleX: 0.8,
-  dashEndScaleY: 1.2,
-  wallSlideEntryScaleX: 0.8,
-  wallSlideEntryScaleY: 1.15,
-  wallJumpScaleX: 0.75,
-  wallJumpScaleY: 1.35,
-  turnScaleX: 0.85,
-  crouchSquashScaleX: 1.2,
-  crouchSquashScaleY: 0.7,
-  scaleReturnSpeed: 12.0,
+  // Squash-stretch defaults — tuned for sprite readability
+  squashStretchEnabled: true,
+  jumpLaunchScaleX: 0.75,
+  jumpLaunchScaleY: 1.30,
+  softLandScaleX: 1.30,
+  softLandScaleY: 0.70,
+  hardLandScaleX: 1.45,
+  hardLandScaleY: 0.60,
+  dashStartScaleX: 1.40,
+  dashStartScaleY: 0.75,
+  dashEndScaleX: 0.82,
+  dashEndScaleY: 1.15,
+  wallSlideEntryScaleX: 0.85,
+  wallSlideEntryScaleY: 1.12,
+  wallJumpScaleX: 0.78,
+  wallJumpScaleY: 1.28,
+  turnScaleX: 0.88,
+  crouchSquashScaleX: 1.18,
+  crouchSquashScaleY: 0.75,
+  scaleReturnSpeed: 10.0,
+  apexFloatScaleX: 0.95,
+  apexFloatScaleY: 1.08,
+  fastFallScaleX: 0.88,
+  fastFallScaleY: 1.15,
+  runFootstrikeScaleX: 1.05,
+  runFootstrikeScaleY: 0.97,
+  slideBoostScaleX: 1.30,
+  slideBoostScaleY: 0.75,
   // Landing defaults
   softLandThresholdFrames: 12,
   hardLandThresholdFrames: 30,
@@ -165,6 +183,34 @@ const STATE_WALL_SLIDING = "WALL_SLIDING";
 const STATE_WALL_JUMPING = "WALL_JUMPING";
 const STATE_DASHING = "DASHING";
 const STATE_HARD_LANDING = "HARD_LANDING";
+
+/**
+ * Crossfade duration in game frames when transitioning between player states.
+ * Key format: "FROM_STATE->TO_STATE". Default is 0 (instant, no crossfade).
+ * Crossfade is purely visual — it never delays state transitions or input response.
+ */
+const CROSSFADE_DURATIONS: Record<string, number> = {
+  "IDLE->RUNNING":          3,
+  "RUNNING->IDLE":          4,
+  "RUNNING->JUMPING":       2,
+  "FALLING->IDLE":          3,
+  "FALLING->RUNNING":       3,
+  "JUMPING->FALLING":       3,
+  "WALL_SLIDING->IDLE":     2,
+  "WALL_SLIDING->FALLING":  2,
+  "DASHING->IDLE":          2,
+  "DASHING->RUNNING":       2,
+  "DASHING->FALLING":       2,
+  "HARD_LANDING->IDLE":     3,
+  "HARD_LANDING->RUNNING":  3,
+  "CROUCHING->IDLE":        2,
+  "CROUCH_SLIDING->IDLE":   3,
+  "CROUCH_SLIDING->CROUCHING": 2,
+};
+
+function getCrossfadeDuration(fromState: string, toState: string): number {
+  return CROSSFADE_DURATIONS[`${fromState}->${toState}`] ?? 0;
+}
 
 export class Player extends Entity {
   grounded = false;
@@ -224,6 +270,18 @@ export class Player extends Entity {
   // Crouch slide particle emit timer
   private crouchSlideParticleTimer = 0;
 
+  // Squash-stretch tracking for new deformation events
+  private wasInApexFloat = false;
+  // Apex float animation override tracking
+  private apexAnimActive = false;
+  private fastFallSquashApplied = false;
+  private lastRunFootstrikeFrame = -1;
+
+  // Run cycle visual state tracking
+  private skidAnimTimer = 0;       // Frames remaining in skid visual
+  private turnAnimTimer = 0;       // Frames remaining in turn visual
+  private lastFootstepFrame = -1;  // Last animation frame that emitted dust
+
   // Landing type indicator (for debug overlay)
   lastLandingType: "SOFT" | "HARD" | null = null;
   landingFlashTimer = 0;
@@ -242,7 +300,24 @@ export class Player extends Entity {
   // Sprite rendering
   private animControllers = new Map<string, AnimationController>();
   private activeAnimController: AnimationController | null = null;
+  private activeAnimFacesLeft = false;
   private spritesReady = false;
+
+  // Transition animation state
+  private transitionAnimActive = false;
+  private transitionAnimController: AnimationController | null = null;
+  private previousStateAnimKey = "";
+
+  // Crossfade blending state (purely visual)
+  private previousStateName = "";
+  private crossfadeState: {
+    outgoingController: AnimationController;
+    outgoingFrameIndex: number;
+    outgoingFacesLeft: boolean;
+    progress: number;
+    durationFrames: number;
+    elapsedFrames: number;
+  } | null = null;
 
   constructor(params?: Partial<PlayerParams>) {
     super({
@@ -316,6 +391,28 @@ export class Player extends Entity {
     });
   }
 
+  /** Emit "pebble" debris particles at the player's feet (for hard landings) */
+  private emitPebbleParticles(): void {
+    if (!this.particleSystem) return;
+    const feetX = this.position.x + this.size.x / 2;
+    const feetY = this.position.y + this.size.y;
+    this.particleSystem.emit({
+      x: feetX,
+      y: feetY,
+      count: 2,
+      speedMin: 60,
+      speedMax: 100,
+      angleMin: -Math.PI * 0.8,
+      angleMax: -Math.PI * 0.2,
+      lifeMin: 0.3,
+      lifeMax: 0.4,
+      sizeMin: 3,
+      sizeMax: 4,
+      colors: ["#8b7355", "#6b5b3d"],
+      gravity: 400,
+    });
+  }
+
   /** Emit particles at a wall contact point */
   private emitWallParticles(count: number, fromRight: boolean, life: number): void {
     if (!this.particleSystem) return;
@@ -378,6 +475,12 @@ export class Player extends Entity {
       enter: (player) => {
         player.size.y = player.params.playerHeight;
         player.currentGravity = player.params.fallGravity;
+
+        // Skid visual: play run-stop animation when entering IDLE from RUNNING with speed
+        const prev = player.stateMachine.getPreviousState();
+        if (prev === STATE_RUNNING && Math.abs(player.velocity.x) > player.params.maxRunSpeed * 0.3) {
+          player.skidAnimTimer = 4;
+        }
       },
       update: (player, dt) => {
         const input = player.input;
@@ -420,6 +523,9 @@ export class Player extends Entity {
           return;
         }
       },
+      exit: (player) => {
+        player.skidAnimTimer = 0;
+      },
     });
 
     this.stateMachine.addState({
@@ -448,9 +554,10 @@ export class Player extends Entity {
           const wasFacingRight = player.facingRight;
           player.facingRight = hInput > 0;
 
-          // Turn-around detection: emit particles + squash
+          // Turn-around detection: emit particles + squash + turn animation
           if (wasFacingRight !== player.facingRight) {
             player.applySquash(player.params.turnScaleX, 1.0);
+            player.turnAnimTimer = 3; // 3 frames of turn animation
             // Turn-around particles behind player (in old direction)
             if (player.particleSystem) {
               const behindX = wasFacingRight
@@ -512,6 +619,48 @@ export class Player extends Entity {
           return;
         }
 
+        // Run animation FPS scaling: faster running = faster leg cycle
+        const speedRatio = Math.abs(player.velocity.x) / player.params.maxRunSpeed;
+        const runFps = 8 + speedRatio * 8; // 8fps at slow, 16fps at full speed
+        if (player.activeAnimController) {
+          player.activeAnimController.setFpsOverride(runFps);
+        }
+
+        // Footstep dust particles at foot-contact frames during fast running
+        if (player.grounded && player.activeAnimController) {
+          if (speedRatio > 0.4) {
+            const currentAnimFrame = player.activeAnimController.getCurrentFrameNumber();
+            if ((currentAnimFrame === 0 || currentAnimFrame === 4) && currentAnimFrame !== player.lastFootstepFrame) {
+              player.lastFootstepFrame = currentAnimFrame;
+              if (player.particleSystem) {
+                const footX = player.position.x + player.size.x / 2;
+                const footY = player.position.y + player.size.y;
+                const dustSize = 1 + speedRatio * 1.5;
+                player.particleSystem.emit({
+                  x: footX,
+                  y: footY - 1,
+                  count: 2,
+                  speedMin: 10,
+                  speedMax: 30,
+                  angleMin: -Math.PI * 0.8,
+                  angleMax: -Math.PI * 0.2,
+                  lifeMin: 0.12,
+                  lifeMax: 0.25,
+                  sizeMin: dustSize * 0.7,
+                  sizeMax: dustSize,
+                  colors: ["#d4c5a9"],
+                  gravity: 40,
+                });
+              }
+            }
+          }
+          // Reset lastFootstepFrame when animation frame changes to non-contact
+          const cf = player.activeAnimController.getCurrentFrameNumber();
+          if (cf !== 0 && cf !== 4) {
+            player.lastFootstepFrame = -1;
+          }
+        }
+
         // Jump check (before crouch)
         if (player.tryJump()) return;
 
@@ -525,6 +674,14 @@ export class Player extends Entity {
             player.stateMachine.setState(STATE_CROUCHING);
           }
           return;
+        }
+      },
+      exit: (player) => {
+        // Clear run cycle visual state
+        player.turnAnimTimer = 0;
+        player.lastFootstepFrame = -1;
+        if (player.activeAnimController) {
+          player.activeAnimController.setFpsOverride(null);
         }
       },
     });
@@ -613,6 +770,9 @@ export class Player extends Entity {
         player.velocity.x = player.facingRight ? maxSlideSpeed : -maxSlideSpeed;
         player.currentGravity = player.params.fallGravity;
         player.crouchSlideParticleTimer = 0;
+
+        // Slide boost squash
+        player.applySquash(player.params.slideBoostScaleX, player.params.slideBoostScaleY);
       },
       update: (player, dt) => {
         const input = player.input;
@@ -914,6 +1074,14 @@ export class Player extends Entity {
             if (isHardLanding) {
               player.applySquash(player.params.hardLandScaleX, player.params.hardLandScaleY);
               player.emitFeetParticles(10, Math.PI * 1.2, 120, 0.25, 2, 4, 200);
+              player.emitPebbleParticles();
+              // Screen shake even on buffered-jump hard landing
+              if (player.screenShake) {
+                const fallRatio = Math.min(1, player.fallDurationFrames / 60);
+                const magnitude = 3 + fallRatio * 2;
+                const duration = 4 + Math.round(fallRatio * 2);
+                player.screenShake.shake(magnitude, duration);
+              }
             } else if (isSoftLanding) {
               player.applySquash(player.params.softLandScaleX, player.params.softLandScaleY);
               player.emitFeetParticles(4, Math.PI * 0.8, 60, 0.12, 1.5, 3, 150);
@@ -970,12 +1138,16 @@ export class Player extends Entity {
         // Hard landing visual effects
         player.applySquash(player.params.hardLandScaleX, player.params.hardLandScaleY);
         player.emitFeetParticles(10, Math.PI * 1.2, 120, 0.25, 2, 4, 200);
+        player.emitPebbleParticles();
         player.lastLandingType = "HARD";
         player.landingFlashTimer = 30;
 
-        // Screen shake
+        // Screen shake — scale with fall duration
         if (player.screenShake) {
-          player.screenShake.shake(3, 4);
+          const fallRatio = Math.min(1, player.fallDurationFrames / 60);
+          const magnitude = 3 + fallRatio * 2;
+          const duration = 4 + Math.round(fallRatio * 2);
+          player.screenShake.shake(magnitude, duration);
         }
       },
       update: (player, _dt) => {
@@ -1020,9 +1192,9 @@ export class Player extends Entity {
         player.canWallCoyoteJump = false;
         player.wallSlideParticleTimer = 0;
 
-        // Wall-slide entry squash + particles
+        // Wall-slide entry squash + particles (5 particles with downward bias)
         player.applySquash(player.params.wallSlideEntryScaleX, player.params.wallSlideEntryScaleY);
-        player.emitWallParticles(3, player.wallSide === 1, 0.15);
+        player.emitWallParticles(5, player.wallSide === 1, 0.2, 0.3);
       },
       update: (player, dt) => {
         const input = player.input;
@@ -1363,6 +1535,11 @@ export class Player extends Entity {
     });
   }
 
+  /** Debug: force the player into a specific state (e.g., "IDLE", "RUNNING") */
+  forceState(state: string): void {
+    this.stateMachine.setState(state);
+  }
+
   /** Check if there's room to stand up from a crouch */
   canStandUp(): boolean {
     if (!this.tileMap) return true;
@@ -1421,6 +1598,42 @@ export class Player extends Entity {
       }
     }
 
+    // New squash-stretch triggers (run after state machine)
+    if (this.params.squashStretchEnabled) {
+      const currentState = this.stateMachine.getCurrentState();
+
+      // A. Apex float entry — subtle vertical stretch at top of jump arc
+      if (this.isInApexFloat && !this.wasInApexFloat) {
+        this.applySquash(this.params.apexFloatScaleX, this.params.apexFloatScaleY);
+      }
+      this.wasInApexFloat = this.isInApexFloat;
+
+      // B. Fast fall stretch — vertical stretch during fast descent (fires once)
+      if (currentState === STATE_FALLING && !this.isInApexFloat) {
+        const fallRatio = Math.min(1, this.velocity.y / this.params.maxFallSpeed);
+        if (fallRatio > 0.5 && !this.fastFallSquashApplied) {
+          this.applySquash(this.params.fastFallScaleX, this.params.fastFallScaleY);
+          this.fastFallSquashApplied = true;
+        }
+      }
+      if (currentState !== STATE_FALLING && currentState !== STATE_JUMPING) {
+        this.fastFallSquashApplied = false;
+      }
+
+      // C. Run footstrike — very subtle compression on foot contacts at speed
+      if (currentState === STATE_RUNNING && this.activeAnimController) {
+        const frameIndex = this.activeAnimController.getCurrentFrameIndex();
+        if ((frameIndex === 0 || frameIndex === 4) && frameIndex !== this.lastRunFootstrikeFrame) {
+          if (Math.abs(this.velocity.x) > this.params.maxRunSpeed * 0.4) {
+            this.applySquash(this.params.runFootstrikeScaleX, this.params.runFootstrikeScaleY);
+          }
+          this.lastRunFootstrikeFrame = frameIndex;
+        } else if (frameIndex !== 0 && frameIndex !== 4) {
+          this.lastRunFootstrikeFrame = -1;
+        }
+      }
+    }
+
     // Squash-stretch return to (1, 1) via lerp
     if (this.params.squashStretchEnabled) {
       this.scaleX += (this.targetScaleX - this.scaleX) * this.params.scaleReturnSpeed * dt;
@@ -1459,13 +1672,143 @@ export class Player extends Entity {
 
     // Update sprite animation based on current state
     if (this.spritesReady) {
-      const mapping = STATE_TO_ANIMATION[this.stateMachine.getCurrentState()];
-      if (mapping) {
+      const currentState = this.stateMachine.getCurrentState();
+      const rawMapping = STATE_TO_ANIMATION[currentState];
+      if (rawMapping) {
+        // Resolve fallback: use primary sheet if it's a real asset, otherwise fall back
+        let mapping: StateAnimMapping = rawMapping;
+        if (rawMapping.fallback) {
+          const assetManager = AssetManager.getInstance();
+          if (!assetManager.isRealAsset(rawMapping.sheetId)) {
+            mapping = rawMapping.fallback;
+          }
+        }
+
+        // Override animation when in apex float (both JUMPING and early FALLING)
+        const isApexOverride = (currentState === STATE_JUMPING || currentState === STATE_FALLING) && this.isInApexFloat;
+        if (isApexOverride) {
+          const assetManager = AssetManager.getInstance();
+          if (assetManager.isRealAsset("player-jump-fall")) {
+            mapping = { sheetId: "player-jump-fall", animName: "jump-apex", facesLeft: true };
+          } else if (assetManager.isRealAsset("player-jump")) {
+            mapping = { sheetId: "player-jump", animName: "jump-apex", facesLeft: true };
+          }
+        }
+        const apexChanged = isApexOverride !== this.apexAnimActive;
+        this.apexAnimActive = isApexOverride;
+
+        // Detect state animation change
+        const animKey = `${mapping.sheetId}:${mapping.animName}`;
+        if (animKey !== this.previousStateAnimKey) {
+          // Capture crossfade from outgoing animation before switching
+          // Use 2-frame crossfade for apex float transitions (within same state)
+          const crossfadeDuration = apexChanged
+            ? 2
+            : getCrossfadeDuration(this.previousStateName, currentState);
+          if (crossfadeDuration > 0 && this.activeAnimController) {
+            this.crossfadeState = {
+              outgoingController: this.activeAnimController,
+              outgoingFrameIndex: this.activeAnimController.getCurrentFrameIndex(),
+              outgoingFacesLeft: this.activeAnimFacesLeft,
+              progress: 0,
+              durationFrames: crossfadeDuration,
+              elapsedFrames: 0,
+            };
+          } else {
+            this.crossfadeState = null;
+          }
+
+          this.previousStateAnimKey = animKey;
+          this.previousStateName = currentState;
+
+          // Check for transition animation (only if primary mapping has it and its sheet is real)
+          if (rawMapping.transitionAnim) {
+            const transSheetId = rawMapping.transitionAnim.sheetId;
+            const assetManager = AssetManager.getInstance();
+            const transIsReal = assetManager.isRealAsset(transSheetId);
+            const transController = transIsReal ? this.animControllers.get(transSheetId) : null;
+            if (transController) {
+              this.transitionAnimActive = true;
+              this.transitionAnimController = transController;
+              transController.restart(rawMapping.transitionAnim.animName);
+              this.activeAnimController = transController;
+              this.activeAnimFacesLeft = mapping.facesLeft ?? false;
+              transController.update(dt);
+              return;
+            }
+          }
+
+          // No transition — switch directly
+          this.transitionAnimActive = false;
+          this.transitionAnimController = null;
+        }
+
+        // Advance crossfade progress
+        if (this.crossfadeState) {
+          this.crossfadeState.elapsedFrames++;
+          this.crossfadeState.progress = Math.min(
+            1.0,
+            this.crossfadeState.elapsedFrames / this.crossfadeState.durationFrames,
+          );
+          if (this.crossfadeState.progress >= 1.0) {
+            this.crossfadeState = null;
+          }
+        }
+
+        // If transition is playing, check if it finished
+        if (this.transitionAnimActive && this.transitionAnimController) {
+          this.transitionAnimController.update(dt);
+          if (this.transitionAnimController.isFinished()) {
+            // Transition done, switch to main animation
+            this.transitionAnimActive = false;
+            this.transitionAnimController = null;
+          } else {
+            this.activeAnimController = this.transitionAnimController;
+            return;
+          }
+        }
+
+        // Main animation
         const controller = this.animControllers.get(mapping.sheetId);
         if (controller) {
           this.activeAnimController = controller;
+          this.activeAnimFacesLeft = mapping.facesLeft ?? false;
           controller.play(mapping.animName);
           controller.update(dt);
+        }
+
+        // Run cycle animation overrides (skid, turn)
+        // These temporarily swap the active controller for visual-only effects
+        const assetMgr = AssetManager.getInstance();
+
+        // Skid animation override: play run-stop when stopping from run
+        if (currentState === STATE_IDLE && this.skidAnimTimer > 0) {
+          const runStopController = this.animControllers.get("player-run-stop");
+          if (runStopController && assetMgr.isRealAsset("player-run-stop")) {
+            if (this.skidAnimTimer === 4) {
+              // First frame: start the run-stop animation
+              runStopController.restart("run-stop");
+            }
+            runStopController.update(dt);
+            this.activeAnimController = runStopController;
+            this.activeAnimFacesLeft = false;
+          }
+          this.skidAnimTimer--;
+        }
+
+        // Turn animation override: play turn during direction reversal
+        if (currentState === STATE_RUNNING && this.turnAnimTimer > 0) {
+          const turnController = this.animControllers.get("player-turn");
+          if (turnController && assetMgr.isRealAsset("player-turn")) {
+            if (this.turnAnimTimer === 3) {
+              // First frame: start the turn animation
+              turnController.restart("turn");
+            }
+            turnController.update(dt);
+            this.activeAnimController = turnController;
+            this.activeAnimFacesLeft = false;
+          }
+          this.turnAnimTimer--;
         }
       }
     }
@@ -1493,14 +1836,94 @@ export class Player extends Entity {
       const sheet = this.activeAnimController.getSpriteSheet();
       if (sheet.isLoaded()) {
         const ctx = renderer.getContext();
-        const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
-        const spriteOffsetY = sheet.config.frameHeight - this.size.y;
-        this.activeAnimController.draw(
-          ctx,
-          pos.x - spriteOffsetX,
-          pos.y - spriteOffsetY,
-          !this.facingRight,
-        );
+        const flipX = this.activeAnimFacesLeft ? this.facingRight : !this.facingRight;
+        const useScale = this.params.squashStretchEnabled && (this.scaleX !== 1.0 || this.scaleY !== 1.0);
+
+        if (this.crossfadeState) {
+          const prevAlpha = ctx.globalAlpha;
+          const outAlpha = 1 - this.crossfadeState.progress;
+          const inAlpha = this.crossfadeState.progress;
+
+          // Draw outgoing frame (fading out)
+          const outSheet = this.crossfadeState.outgoingController.getSpriteSheet();
+          if (outSheet.isLoaded()) {
+            const outFlipX = this.crossfadeState.outgoingFacesLeft
+              ? this.facingRight : !this.facingRight;
+            ctx.globalAlpha = prevAlpha * outAlpha;
+            if (useScale) {
+              const cx = pos.x + this.size.x / 2;
+              const bottom = pos.y + this.size.y;
+              outSheet.drawFrame(
+                ctx,
+                this.crossfadeState.outgoingFrameIndex,
+                cx - outSheet.config.frameWidth * this.scaleX / 2,
+                bottom - outSheet.config.frameHeight * this.scaleY,
+                outFlipX,
+                this.scaleX,
+                this.scaleY,
+              );
+            } else {
+              const outOffsetX = (outSheet.config.frameWidth - this.size.x) / 2;
+              const outOffsetY = outSheet.config.frameHeight - this.size.y;
+              outSheet.drawFrame(
+                ctx,
+                this.crossfadeState.outgoingFrameIndex,
+                pos.x - outOffsetX,
+                pos.y - outOffsetY,
+                outFlipX,
+              );
+            }
+          }
+
+          // Draw incoming frame (fading in)
+          ctx.globalAlpha = prevAlpha * inAlpha;
+          if (useScale) {
+            const cx = pos.x + this.size.x / 2;
+            const bottom = pos.y + this.size.y;
+            this.activeAnimController.draw(
+              ctx,
+              cx - sheet.config.frameWidth * this.scaleX / 2,
+              bottom - sheet.config.frameHeight * this.scaleY,
+              flipX,
+              this.scaleX,
+              this.scaleY,
+            );
+          } else {
+            const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
+            const spriteOffsetY = sheet.config.frameHeight - this.size.y;
+            this.activeAnimController.draw(
+              ctx,
+              pos.x - spriteOffsetX,
+              pos.y - spriteOffsetY,
+              flipX,
+            );
+          }
+
+          ctx.globalAlpha = prevAlpha;
+        } else {
+          // Normal rendering (no crossfade)
+          if (useScale) {
+            const cx = pos.x + this.size.x / 2;
+            const bottom = pos.y + this.size.y;
+            this.activeAnimController.draw(
+              ctx,
+              cx - sheet.config.frameWidth * this.scaleX / 2,
+              bottom - sheet.config.frameHeight * this.scaleY,
+              flipX,
+              this.scaleX,
+              this.scaleY,
+            );
+          } else {
+            const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
+            const spriteOffsetY = sheet.config.frameHeight - this.size.y;
+            this.activeAnimController.draw(
+              ctx,
+              pos.x - spriteOffsetX,
+              pos.y - spriteOffsetY,
+              flipX,
+            );
+          }
+        }
       }
     }
 
