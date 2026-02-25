@@ -17,6 +17,7 @@ import {
   BiomeBackground,
   createBackgroundForBiome,
 } from "@/engine/world/BiomeBackground";
+import { AmbientAtmosphere, createScribeHallAtmosphere } from "@/engine/world/AmbientAtmosphere";
 import { BIOME_BACKGROUND_LAYERS } from "@/engine/world/BiomeBackgroundSprites";
 import { preloadBiomeBackground } from "@/engine/world/BiomeBackgroundSprites";
 import { loadTileSprites } from "@/engine/world/TileSprites";
@@ -35,9 +36,12 @@ const ROOM = SCRIBE_HALL;
 const SPAWN = ROOM.defaultSpawn ?? { x: 960, y: 1000 };
 
 const DEFAULT_LAYER_NAMES = [
-  "L0: Far (0.10)",
-  "L1: Mid (0.30)",
-  "L2: Near (0.60)",
+  "L0: Sky (0.02)",
+  "L1: Far-deep (0.08)",
+  "L2: Mid-detail (0.20)",
+  "L3: Near-detail (0.40)",
+  "L4: FG-near (1.15)",
+  "L5: FG-far (1.40)",
 ];
 
 // ─── Engine ref extensions ──────────────────────────────────────────
@@ -67,9 +71,9 @@ export default function EnvironmentShowcaseTest() {
   const bgRef = useRef<BiomeBackground | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>("full");
-  const [layerVisibility, setLayerVisibility] = useState<boolean[]>([true, true, true]);
-  const [parallaxFactors, setParallaxFactors] = useState<number[]>([0.1, 0.3, 0.6]);
-  const [opacityValues, setOpacityValues] = useState<number[]>([1.0, 1.0, 1.0]);
+  const [layerVisibility, setLayerVisibility] = useState<boolean[]>([true, true, true, true, true, true]);
+  const [parallaxFactors, setParallaxFactors] = useState<number[]>([0.02, 0.08, 0.20, 0.40, 1.15, 1.40]);
+  const [opacityValues, setOpacityValues] = useState<number[]>([1.0, 1.0, 1.0, 1.0, 0.25, 0.15]);
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(30);
   const [zoom, setZoom] = useState(1.0);
   const [followPlayer, setFollowPlayer] = useState(true);
@@ -177,9 +181,9 @@ export default function EnvironmentShowcaseTest() {
     // ─── Refs for game loop ───────────────────────────────────────
 
     const viewModeRef: { current: ViewMode } = { current: "full" };
-    const layerVisRef = { current: [true, true, true] };
-    const parallaxRef = { current: [0.1, 0.3, 0.6] };
-    const opacityRef = { current: [1.0, 1.0, 1.0] };
+    const layerVisRef = { current: [true, true, true, true, true, true] };
+    const parallaxRef = { current: [0.02, 0.08, 0.20, 0.40, 1.15, 1.40] };
+    const opacityRef = { current: [1.0, 1.0, 1.0, 1.0, 0.25, 0.15] };
     const autoScrollRef = { current: 30 };
     const zoomRef = { current: 1.0 };
     const followRef = { current: true };
@@ -206,6 +210,8 @@ export default function EnvironmentShowcaseTest() {
     // ─── Load assets ──────────────────────────────────────────────
 
     let background: BiomeBackground | null = null;
+    const atmosphereInstance: AmbientAtmosphere | null =
+      ROOM.biomeId === "scribe-hall" ? createScribeHallAtmosphere() : null;
 
     const assetManager = AssetManager.getInstance();
     Promise.all([
@@ -281,6 +287,17 @@ export default function EnvironmentShowcaseTest() {
         const shakeOffset = screenShake.update();
         camera.position.x += shakeOffset.offsetX;
         camera.position.y += shakeOffset.offsetY;
+      }
+
+      // Atmosphere update
+      if (atmosphereInstance) {
+        atmosphereInstance.update(
+          dt,
+          camera.position.x - CANVAS_WIDTH / 2,
+          camera.position.y - CANVAS_HEIGHT / 2,
+          CANVAS_WIDTH,
+          CANVAS_HEIGHT,
+        );
       }
 
       // Broadcast camera position for React UI
@@ -396,6 +413,16 @@ export default function EnvironmentShowcaseTest() {
         renderer.applyCamera(camera);
       }
 
+      // Atmosphere: light shafts + candle glow (screen space — behind platforms, in front of background)
+      if (atmosphereInstance && mode !== "layer-isolation") {
+        renderer.resetCamera();
+        const camX = camera.position.x - CANVAS_WIDTH / 2;
+        const camY = camera.position.y - CANVAS_HEIGHT / 2;
+        atmosphereInstance.renderLightShafts(rCtx, camX, camY);
+        atmosphereInstance.renderCandleGlow(rCtx, camX, camY);
+        renderer.applyCamera(camera);
+      }
+
       // Tilemap
       if (mode !== "layer-isolation") {
         tileMap.render(renderer);
@@ -404,6 +431,15 @@ export default function EnvironmentShowcaseTest() {
       // Particles (behind player)
       if (mode === "full" || mode === "layer-isolation") {
         particleSystem.render(renderer);
+      }
+
+      // Atmosphere: dust motes (screen space — in front of player, before foreground)
+      if (atmosphereInstance && mode !== "layer-isolation") {
+        renderer.resetCamera();
+        const camX = camera.position.x - CANVAS_WIDTH / 2;
+        const camY = camera.position.y - CANVAS_HEIGHT / 2;
+        atmosphereInstance.renderDustMotes(rCtx, camX, camY);
+        renderer.applyCamera(camera);
       }
 
       // Debug overlays
