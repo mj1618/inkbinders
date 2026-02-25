@@ -16,8 +16,10 @@ export const VINE_VESTIBULE: RoomData = {
   biomeId: "herbarium-folio",
   defaultSpawn: { x: 480, y: 1080 - 64 - T },
   platforms: [
-    // Floor
-    { x: 0, y: 1080 - T, width: 960, height: T },
+    // Floor (left segment)
+    { x: 0, y: 1080 - T, width: 400, height: T },
+    // Floor (right segment)
+    { x: 560, y: 1080 - T, width: 400, height: T },
     // Left wall
     { x: 0, y: 0, width: T, height: 1080 },
     // Right wall
@@ -55,6 +57,13 @@ export const VINE_VESTIBULE: RoomData = {
       zone: { x: 960 - EXIT_ZONE_DEPTH, y: 320, width: EXIT_ZONE_DEPTH, height: 96 },
       targetRoomId: "root-cellar",
       targetSpawnPoint: { x: 64, y: T + 64 },
+    },
+    // Bottom → Stitch Sanctum (ability shrine)
+    {
+      direction: "bottom",
+      zone: { x: 400, y: 1080 - EXIT_ZONE_DEPTH, width: 160, height: EXIT_ZONE_DEPTH },
+      targetRoomId: "stitch-shrine",
+      targetSpawnPoint: { x: 480, y: 1080 - 64 - T },
     },
   ],
   gates: [],

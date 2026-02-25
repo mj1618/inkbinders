@@ -1,6 +1,7 @@
 // Scribe Hall — the player's home base hub room
 
 import type { RoomData } from "./Room";
+import { EXIT_ZONE_DEPTH } from "./Room";
 
 const T = 32;
 
@@ -12,8 +13,10 @@ export const SCRIBE_HALL: RoomData = {
   biomeId: "scribe-hall",
   defaultSpawn: { x: 960, y: 1080 - T - 32 },
   platforms: [
-    // Floor (full width)
-    { x: 0, y: 1080 - T, width: 1920, height: T },
+    // Floor (left segment)
+    { x: 0, y: 1080 - T, width: 880, height: T },
+    // Floor (right segment)
+    { x: 1040, y: 1080 - T, width: 880, height: T },
     // Left wall
     { x: 0, y: 0, width: T, height: 1080 },
     // Right wall
@@ -59,6 +62,13 @@ export const SCRIBE_HALL: RoomData = {
       direction: "right",
       zone: { x: 1920 - 16, y: 1080 - T - 128, width: 16, height: 96 },
       targetRoomId: "archive-passage",
+      targetSpawnPoint: { x: 64, y: 540 - 64 - T },
+    },
+    // Bottom exit → Harbor Approach (Maritime Ledger Wing)
+    {
+      direction: "bottom",
+      zone: { x: 880, y: 1080 - EXIT_ZONE_DEPTH, width: 160, height: EXIT_ZONE_DEPTH },
+      targetRoomId: "harbor-approach",
       targetSpawnPoint: { x: 64, y: 540 - 64 - T },
     },
   ],

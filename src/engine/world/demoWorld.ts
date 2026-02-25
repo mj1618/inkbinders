@@ -9,6 +9,8 @@ import { TUTORIAL_CORRIDOR, VERTICAL_SHAFT, VINE_GARDEN } from "./presetRooms";
 import { HERBARIUM_WING_ROOMS, HERBARIUM_WING_ROOM_IDS } from "./herbariumRooms";
 import { CENTRAL_ARCHIVES_ROOMS, CENTRAL_ARCHIVES_ROOM_IDS } from "./centralArchivesRooms";
 import { ASTRAL_ATLAS_ROOMS, ASTRAL_ATLAS_ROOM_IDS } from "./astralAtlasRooms";
+import { GOTHIC_ERRATA_ROOMS, GOTHIC_ERRATA_ROOM_IDS } from "./gothicErrataRooms";
+import { MARITIME_LEDGER_ROOMS, MARITIME_LEDGER_ROOM_IDS } from "./maritimeLedgerRooms";
 import { ABILITY_SHRINE_ROOMS } from "./abilityShrineRooms";
 
 const T = 32;
@@ -88,7 +90,7 @@ export const DEMO_WORLD_DATA: WorldGraphData = {
       id: "herbarium-wing",
       name: "Herbarium Wing",
       biomeId: "herbarium-folio",
-      roomIds: ["tutorial-corridor", "vine-garden", ...HERBARIUM_WING_ROOM_IDS],
+      roomIds: ["tutorial-corridor", "vine-garden", "stitch-shrine", ...HERBARIUM_WING_ROOM_IDS],
     },
     {
       id: "central-archives",
@@ -101,6 +103,18 @@ export const DEMO_WORLD_DATA: WorldGraphData = {
       name: "Astral Atlas Wing",
       biomeId: "astral-atlas",
       roomIds: [...ASTRAL_ATLAS_ROOM_IDS, "paste-shrine"],
+    },
+    {
+      id: "gothic-errata-wing",
+      name: "Gothic Errata Wing",
+      biomeId: "gothic-errata",
+      roomIds: [...GOTHIC_ERRATA_ROOM_IDS, "index-shrine"],
+    },
+    {
+      id: "maritime-ledger-wing",
+      name: "Maritime Ledger Wing",
+      biomeId: "maritime-ledger",
+      roomIds: [...MARITIME_LEDGER_ROOM_IDS, "redaction-shrine"],
     },
   ],
 };
@@ -123,8 +137,23 @@ export function createDemoWorld(): { worldGraph: WorldGraph; rooms: Map<RoomId, 
   for (const [id, room] of Object.entries(ASTRAL_ATLAS_ROOMS)) {
     rooms.set(id, room);
   }
+  for (const [id, room] of Object.entries(GOTHIC_ERRATA_ROOMS)) {
+    rooms.set(id, room);
+  }
+  for (const [id, room] of Object.entries(MARITIME_LEDGER_ROOMS)) {
+    rooms.set(id, room);
+  }
   if (ABILITY_SHRINE_ROOMS["paste-shrine"]) {
     rooms.set("paste-shrine", ABILITY_SHRINE_ROOMS["paste-shrine"]);
+  }
+  if (ABILITY_SHRINE_ROOMS["index-shrine"]) {
+    rooms.set("index-shrine", ABILITY_SHRINE_ROOMS["index-shrine"]);
+  }
+  if (ABILITY_SHRINE_ROOMS["stitch-shrine"]) {
+    rooms.set("stitch-shrine", ABILITY_SHRINE_ROOMS["stitch-shrine"]);
+  }
+  if (ABILITY_SHRINE_ROOMS["redaction-shrine"]) {
+    rooms.set("redaction-shrine", ABILITY_SHRINE_ROOMS["redaction-shrine"]);
   }
 
   const worldGraph = new WorldGraph(DEMO_WORLD_DATA, rooms);
