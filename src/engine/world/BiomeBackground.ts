@@ -7,6 +7,10 @@ import { BIOME_BACKGROUND_LAYERS } from "./BiomeBackgroundSprites";
 export interface BackgroundLayer {
   /** Scroll speed relative to camera (0 = fixed, 1 = moves with camera) */
   parallaxFactor: number;
+  /** If true, this layer renders OVER the player (foreground depth) */
+  foreground?: boolean;
+  /** Layer opacity (0.0–1.0). Default: 1.0 */
+  opacity?: number;
   /** Render function for this layer */
   render: (
     ctx: CanvasRenderingContext2D,
@@ -24,7 +28,51 @@ export class BiomeBackground {
     this.layers = layers;
   }
 
-  /** Render all background layers */
+  /** Internal helper to render a subset of layers */
+  private renderLayers(
+    ctx: CanvasRenderingContext2D,
+    cameraX: number,
+    cameraY: number,
+    canvasWidth: number,
+    canvasHeight: number,
+    foreground: boolean,
+  ): void {
+    for (const layer of this.layers) {
+      if ((layer.foreground ?? false) !== foreground) continue;
+      ctx.save();
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = layer.opacity ?? 1.0;
+      const offsetX = -cameraX * layer.parallaxFactor;
+      ctx.translate(offsetX, 0);
+      layer.render(ctx, cameraX, cameraY, canvasWidth, canvasHeight);
+      ctx.globalAlpha = prevAlpha;
+      ctx.restore();
+    }
+  }
+
+  /** Render background layers (foreground !== true) — call BEFORE platforms/player */
+  renderBackground(
+    ctx: CanvasRenderingContext2D,
+    cameraX: number,
+    cameraY: number,
+    canvasWidth: number,
+    canvasHeight: number,
+  ): void {
+    this.renderLayers(ctx, cameraX, cameraY, canvasWidth, canvasHeight, false);
+  }
+
+  /** Render foreground layers (foreground === true) — call AFTER platforms/player, before HUD */
+  renderForeground(
+    ctx: CanvasRenderingContext2D,
+    cameraX: number,
+    cameraY: number,
+    canvasWidth: number,
+    canvasHeight: number,
+  ): void {
+    this.renderLayers(ctx, cameraX, cameraY, canvasWidth, canvasHeight, true);
+  }
+
+  /** Render all layers (backward-compatible — calls renderBackground then renderForeground) */
   render(
     ctx: CanvasRenderingContext2D,
     cameraX: number,
@@ -32,14 +80,8 @@ export class BiomeBackground {
     canvasWidth: number,
     canvasHeight: number,
   ): void {
-    for (const layer of this.layers) {
-      ctx.save();
-      const offsetX = -cameraX * layer.parallaxFactor;
-      const offsetY = -cameraY * layer.parallaxFactor;
-      ctx.translate(offsetX, offsetY);
-      layer.render(ctx, cameraX, cameraY, canvasWidth, canvasHeight);
-      ctx.restore();
-    }
+    this.renderBackground(ctx, cameraX, cameraY, canvasWidth, canvasHeight);
+    this.renderForeground(ctx, cameraX, cameraY, canvasWidth, canvasHeight);
   }
 }
 
@@ -58,10 +100,10 @@ function seededRandom(seed: number): () => number {
 const BG_IMAGE_WIDTH = 960;
 
 /**
- * Render a background sprite layer, tiling horizontally for wide rooms.
- * The caller's ctx has already been translated by (-cameraX * parallaxFactor).
- * In that translated space, the visible screen starts at (cameraX * parallaxFactor)
- * and extends canvasWidth pixels to the right. We tile 960px-wide images to cover it.
+ * Render a background sprite layer, tiling horizontally with mirror-flip to
+ * hide seams. The caller's ctx has already been translated by
+ * (-cameraX * parallaxFactor, 0). Sprites are drawn at y=0 (no vertical tiling
+ * since images match canvas height).
  */
 function renderSpriteLayer(
   ctx: CanvasRenderingContext2D,
@@ -73,13 +115,13 @@ function renderSpriteLayer(
   const sheet = AssetManager.getInstance().getSpriteSheet(sheetId);
   if (!sheet) return;
 
-  // In translated space, visible region starts at cameraX * parallaxFactor
   const visibleStart = cameraX * parallaxFactor;
   const startTile = Math.floor(visibleStart / BG_IMAGE_WIDTH);
   const endTile = Math.ceil((visibleStart + canvasWidth) / BG_IMAGE_WIDTH);
 
   for (let i = startTile; i <= endTile; i++) {
-    sheet.drawFrame(ctx, 0, i * BG_IMAGE_WIDTH, 0);
+    const flipX = (i & 1) !== 0;
+    sheet.drawFrame(ctx, 0, i * BG_IMAGE_WIDTH, 0, flipX);
   }
 }
 
@@ -133,186 +175,45 @@ export function createDefaultBackground(
   return new BiomeBackground(layers);
 }
 
-// ─── Scribe Hall background layer generators ───────────────────────────
 
-interface BookshelfShape {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  shelves: number;
-}
+// ─── Scribe Hall background ─────────────────────────────────────────────
 
-interface CandelabraShape {
-  x: number;
-  y: number;
-  height: number;
-  arms: number;
-}
-
-interface ScrollShape {
-  x: number;
-  y: number;
-  width: number;
-  length: number;
-  angle: number;
-}
-
-function generateBookshelves(count: number, seed: number, width: number, height: number): BookshelfShape[] {
-  const rng = seededRandom(seed);
-  const shapes: BookshelfShape[] = [];
-  for (let i = 0; i < count; i++) {
-    shapes.push({
-      x: rng() * width,
-      y: rng() * height * 0.4 + height * 0.3,
-      width: 80 + rng() * 120,
-      height: 100 + rng() * 150,
-      shelves: 3 + Math.floor(rng() * 3),
-    });
-  }
-  return shapes;
-}
-
-function generateCandelabras(count: number, seed: number, width: number, height: number): CandelabraShape[] {
-  const rng = seededRandom(seed);
-  const shapes: CandelabraShape[] = [];
-  for (let i = 0; i < count; i++) {
-    shapes.push({
-      x: rng() * width,
-      y: rng() * height * 0.5 + height * 0.2,
-      height: 40 + rng() * 60,
-      arms: 2 + Math.floor(rng() * 3),
-    });
-  }
-  return shapes;
-}
-
-function generateScrolls(count: number, seed: number, width: number, height: number): ScrollShape[] {
-  const rng = seededRandom(seed);
-  const shapes: ScrollShape[] = [];
-  for (let i = 0; i < count; i++) {
-    shapes.push({
-      x: rng() * width,
-      y: rng() * height * 0.3,
-      width: 10 + rng() * 20,
-      length: 30 + rng() * 60,
-      angle: (rng() - 0.5) * 0.3,
-    });
-  }
-  return shapes;
-}
 
 /**
  * Create the Scribe Hall parallax background layers.
- * Warm library aesthetic — distant bookshelves, candelabras, hanging scrolls.
+ * 9-layer warm library aesthetic driven by BiomeBackgroundSprites config.
  */
 export function createScribeHallBackground(
   levelWidth: number,
   levelHeight: number,
-  seed: number = 33,
 ): BiomeBackground {
-  const bookshelves = generateBookshelves(6, seed, levelWidth, levelHeight);
-  const candelabras = generateCandelabras(8, seed + 100, levelWidth, levelHeight);
-  const scrolls = generateScrolls(10, seed + 200, levelWidth, levelHeight);
+  const layerDefs = BIOME_BACKGROUND_LAYERS["scribe-hall"];
+  if (!layerDefs) return createDefaultBackground(levelWidth, levelHeight);
 
-  const scribeSheetIds = BIOME_BACKGROUND_LAYERS["scribe-hall"];
-
-  const layers: BackgroundLayer[] = [
-    // Layer 1: Distant bookshelves (parallax 0.1)
-    {
-      parallaxFactor: 0.1,
-      render: (ctx, cameraX, _cameraY, canvasWidth, canvasHeight) => {
-        if (RenderConfig.useSprites() && scribeSheetIds) {
-          renderSpriteLayer(ctx, scribeSheetIds[0].sheetId, cameraX, 0.1, canvasWidth);
-        }
-        if (RenderConfig.useRectangles()) {
-          // Warm dark background
-          ctx.fillStyle = "#0f0a05";
-          ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
-
-          // Bookshelves as dark rectangles with shelf lines
-          ctx.save();
-          ctx.globalAlpha = 0.06;
-          for (const shelf of bookshelves) {
-            ctx.fillStyle = "#3d2b1a";
-            ctx.fillRect(shelf.x, shelf.y, shelf.width, shelf.height);
-            ctx.strokeStyle = "#6b4423";
-            ctx.lineWidth = 0.5;
-            const shelfHeight = shelf.height / shelf.shelves;
-            for (let s = 1; s < shelf.shelves; s++) {
-              ctx.beginPath();
-              ctx.moveTo(shelf.x, shelf.y + s * shelfHeight);
-              ctx.lineTo(shelf.x + shelf.width, shelf.y + s * shelfHeight);
-              ctx.stroke();
-            }
-          }
-          ctx.restore();
-        }
-      },
+  const layers: BackgroundLayer[] = layerDefs.map((def, idx) => ({
+    parallaxFactor: def.parallaxFactor,
+    foreground: def.foreground,
+    opacity: def.opacity,
+    render: (
+      ctx: CanvasRenderingContext2D,
+      cameraX: number,
+      _cameraY: number,
+      canvasWidth: number,
+      canvasHeight: number,
+    ) => {
+      if (RenderConfig.useSprites()) {
+        renderSpriteLayer(ctx, def.sheetId, cameraX, def.parallaxFactor, canvasWidth);
+      }
+      if (RenderConfig.useRectangles() && idx === 0) {
+        const grad = ctx.createLinearGradient(0, canvasHeight, 0, 0);
+        grad.addColorStop(0, "#0f0a05");
+        grad.addColorStop(0.7, "#1a1512");
+        grad.addColorStop(1, "#2a1a0f");
+        ctx.fillStyle = grad;
+        ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
+      }
     },
-
-    // Layer 2: Candelabras and reading desks (parallax 0.3)
-    {
-      parallaxFactor: 0.3,
-      render: (ctx, cameraX, _cameraY, canvasWidth) => {
-        if (RenderConfig.useSprites() && scribeSheetIds) {
-          renderSpriteLayer(ctx, scribeSheetIds[1].sheetId, cameraX, 0.3, canvasWidth);
-        }
-        if (RenderConfig.useRectangles()) {
-          ctx.save();
-          ctx.globalAlpha = 0.1;
-          for (const c of candelabras) {
-            // Stem
-            ctx.strokeStyle = "#6b4423";
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(c.x, c.y);
-            ctx.lineTo(c.x, c.y - c.height);
-            ctx.stroke();
-            // Arms with flame circles
-            ctx.fillStyle = "#fbbf24";
-            const armSpacing = 12;
-            for (let a = 0; a < c.arms; a++) {
-              const ax = c.x + (a - (c.arms - 1) / 2) * armSpacing;
-              const ay = c.y - c.height;
-              ctx.beginPath();
-              ctx.arc(ax, ay - 4, 3, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          }
-          ctx.restore();
-        }
-      },
-    },
-
-    // Layer 3: Hanging scrolls and ink bottles (parallax 0.6)
-    {
-      parallaxFactor: 0.6,
-      render: (ctx, cameraX, _cameraY, canvasWidth) => {
-        if (RenderConfig.useSprites() && scribeSheetIds) {
-          renderSpriteLayer(ctx, scribeSheetIds[2].sheetId, cameraX, 0.6, canvasWidth);
-        }
-        if (RenderConfig.useRectangles()) {
-          ctx.save();
-          ctx.globalAlpha = 0.15;
-          for (const scroll of scrolls) {
-            ctx.save();
-            ctx.translate(scroll.x, scroll.y);
-            ctx.rotate(scroll.angle);
-            // Scroll body
-            ctx.fillStyle = "#d4a634";
-            ctx.fillRect(-scroll.width / 2, 0, scroll.width, scroll.length);
-            // End caps
-            ctx.fillStyle = "#6b4423";
-            ctx.fillRect(-scroll.width / 2 - 2, -2, scroll.width + 4, 4);
-            ctx.fillRect(-scroll.width / 2 - 2, scroll.length - 2, scroll.width + 4, 4);
-            ctx.restore();
-          }
-          ctx.restore();
-        }
-      },
-    },
-  ];
+  }));
 
   return new BiomeBackground(layers);
 }
