@@ -119,9 +119,9 @@ export function createDefaultBackground(
   const layers: BackgroundLayer[] = [
     {
       parallaxFactor: 0.1,
-      render: (ctx, cameraX) => {
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
         if (RenderConfig.useSprites()) {
-          renderSpriteLayer(ctx, "bg-default-far", cameraX, 0.1, levelWidth);
+          renderSpriteLayer(ctx, "bg-default-far", cameraX, 0.1, canvasWidth);
         }
         if (RenderConfig.useRectangles()) {
           ctx.fillStyle = "#0a0a0f";
