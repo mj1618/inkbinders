@@ -108,6 +108,7 @@ export class RoomManager {
     }
 
     this.currentTileMap = new TileMap(platforms);
+    this.currentTileMap.setBiomeId(room.biomeId);
 
     // Build obstacles
     this.currentObstacles = room.obstacles.map((o) => {

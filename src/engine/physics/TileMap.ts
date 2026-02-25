@@ -3,8 +3,11 @@ import type { Renderer } from "@/engine/core/Renderer";
 import { aabbOverlap, aabbIntersection } from "./AABB";
 import { COLORS } from "@/lib/constants";
 import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AssetManager } from "@/engine/core/AssetManager";
+import type { SpriteSheet } from "@/engine/core/SpriteSheet";
 import type { SurfaceType } from "./Surfaces";
 import { getSurfaceProps } from "./Surfaces";
+import { BIOME_TILE_SHEET, getTileFrame, SURFACE_TINT } from "@/engine/world/TileSprites";
 
 export interface Platform {
   x: number;
@@ -37,8 +40,19 @@ export class TileMap {
   /** Rectangles where specific platforms are excluded from collision (e.g., active stitches) */
   exclusionZones: ExclusionZone[] = [];
 
+  /** Biome ID for tile sprite rendering */
+  private biomeId: string = "default";
+
   constructor(platforms: Platform[]) {
     this.platforms = platforms;
+  }
+
+  setBiomeId(biomeId: string): void {
+    this.biomeId = biomeId;
+  }
+
+  getBiomeId(): string {
+    return this.biomeId;
   }
 
   /** Add an exclusion zone — platforms in excludedPlatforms will be skipped when entity overlaps rect */
@@ -242,16 +256,99 @@ export class TileMap {
 
   /** Render all platforms */
   render(renderer: Renderer): void {
-    // Always render rectangles for tiles (no tile sprites yet)
-    // TODO: sprite tile rendering (Task 5)
-    if (RenderConfig.useRectangles() || RenderConfig.getMode() === "sprites") {
-      for (const p of this.platforms) {
-        const surfaceProps = getSurfaceProps(p.surfaceType);
-        const fillColor = surfaceColorToFill(surfaceProps.color);
-        renderer.fillRect(p.x, p.y, p.width, p.height, fillColor);
-        renderer.strokeRect(p.x, p.y, p.width, p.height, surfaceProps.color, 1);
+    const ctx = renderer.getContext();
+
+    for (const p of this.platforms) {
+      // Skip excluded platforms in all render modes
+      if (this.isPlatformExcludedForRender(p)) continue;
+
+      if (RenderConfig.useSprites()) {
+        const sheetId = BIOME_TILE_SHEET[this.biomeId] ?? BIOME_TILE_SHEET["default"];
+        const sheet = AssetManager.getInstance().getSpriteSheet(sheetId);
+        if (sheet) {
+          const frame = getTileFrame(p.width, p.height);
+          this.renderTileSprite(ctx, p, sheet, frame);
+          this.renderSurfaceTint(ctx, p);
+        } else {
+          this.renderRectangle(renderer, p);
+        }
+      }
+
+      if (RenderConfig.useRectangles()) {
+        // In "both" mode, draw rectangles semi-transparent so sprites show through
+        const rectAlpha = RenderConfig.useSprites() ? 0.4 : 1;
+        this.renderRectangle(renderer, p, rectAlpha);
       }
     }
+  }
+
+  /** Draw the existing colored rectangle for a platform */
+  private renderRectangle(renderer: Renderer, platform: Platform, alpha = 1): void {
+    const surfaceProps = getSurfaceProps(platform.surfaceType);
+    const fillColor = surfaceColorToFill(surfaceProps.color);
+    const ctx = renderer.getContext();
+    if (alpha < 1) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+    }
+    renderer.fillRect(platform.x, platform.y, platform.width, platform.height, fillColor);
+    renderer.strokeRect(platform.x, platform.y, platform.width, platform.height, surfaceProps.color, 1);
+    if (alpha < 1) {
+      ctx.restore();
+    }
+  }
+
+  /** Tile a sprite frame across a platform's dimensions, clipped to bounds */
+  private renderTileSprite(
+    ctx: CanvasRenderingContext2D,
+    platform: Platform,
+    spriteSheet: SpriteSheet,
+    frameIndex: number,
+  ): void {
+    const tileW = 32;
+    const tileH = 32;
+    const cols = Math.ceil(platform.width / tileW);
+    const rows = Math.ceil(platform.height / tileH);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(platform.x, platform.y, platform.width, platform.height);
+    ctx.clip();
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        spriteSheet.drawFrame(
+          ctx,
+          frameIndex,
+          platform.x + col * tileW,
+          platform.y + row * tileH,
+        );
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /** Draw a semi-transparent color overlay for non-normal surface types */
+  private renderSurfaceTint(
+    ctx: CanvasRenderingContext2D,
+    platform: Platform,
+  ): void {
+    const tint = SURFACE_TINT[platform.surfaceType ?? "normal"];
+    if (tint) {
+      ctx.fillStyle = tint;
+      ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+    }
+  }
+
+  /** Check if a platform is excluded by any exclusion zone (for rendering — no entity bounds check) */
+  private isPlatformExcludedForRender(platform: Platform): boolean {
+    for (const zone of this.exclusionZones) {
+      if (zone.excludedPlatforms.includes(platform)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

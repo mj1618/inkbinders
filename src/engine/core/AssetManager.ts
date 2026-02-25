@@ -7,7 +7,20 @@ const PLACEHOLDER_COLORS: Record<string, string> = {
   reader: "#ef4444",
   binder: "#a855f7",
   proofwarden: "#3b82f6",
+  giant: "#8b5cf6",
+  seraph: "#8b5cf6",
+  eater: "#8b5cf6",
+  "tiles-scribe-hall": "#6b5344",
+  "tiles-herbarium-folio": "#3b6b3b",
+  "tiles-astral-atlas": "#475569",
+  "tiles-maritime-ledger": "#3b6b9b",
+  "tiles-gothic-errata": "#5c3a3a",
   tiles: "#8b7355",
+  "bg-scribe-hall": "#8b6914",
+  "bg-herbarium": "#2d5a27",
+  "bg-astral": "#1a1a4e",
+  "bg-maritime": "#1a4a4a",
+  "bg-gothic": "#2a1a1a",
 };
 
 function getPlaceholderColor(id: string): string {

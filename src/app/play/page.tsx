@@ -35,6 +35,7 @@ import {
 } from "@/engine/physics/Obstacles";
 import { GameSession } from "@/engine/core/GameSession";
 import { RenderConfig } from "@/engine/core/RenderConfig";
+import { loadTileSprites } from "@/engine/world/TileSprites";
 import type { LoadedGameState } from "@/engine/save/SaveSystem";
 import { useSaveSlots } from "@/hooks/useSaveSlots";
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS } from "@/lib/constants";
@@ -330,6 +331,9 @@ function PlayPageInner() {
             rooms,
             startingRoomId,
           });
+
+          // Load tile sprites (placeholders used if images are missing)
+          await loadTileSprites();
 
           // Engine setup
           const engine = new Engine({ ctx });

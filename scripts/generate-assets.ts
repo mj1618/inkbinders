@@ -160,6 +160,105 @@ const ASSET_PROMPTS: AssetPrompt[] = [
     prompt: `${STYLE_PREFIX} sprite sheet of an armored sentinel dying, 3 frames side by side: armor cracking and falling off, collapsing to knees with ink leaking, crumpled armor pile on ground, each frame 64x64 pixels, iron gray fading to black, game sprite sheet, 192x64 total`,
     aspectRatio: "16:9",
   },
+  // ─── Footnote Giant sprite sheets (5 total, 128×128 frames) ─────
+  {
+    id: "giant-idle",
+    filename: "giant-idle-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a massive towering footnote golem made of stacked books and parchment, 4 frames in a horizontal strip, idle breathing animation with pages rustling gently, heavy stone-like base, glowing arcane symbols on spine, each frame 128x128 pixels, indigo and gold tones, game boss sprite sheet, 512x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "giant-stomp",
+    filename: "giant-stomp-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a massive footnote golem stomping attack, 4 frames in a horizontal strip: telegraph pose with arm raised, downward slam impact, shockwave burst from ground, stuck in ground recovery, each frame 128x128 pixels, indigo and orange impact tones, game boss sprite sheet, 512x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "giant-sweep",
+    filename: "giant-sweep-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a massive footnote golem sweeping beam attack, 4 frames in a horizontal strip: telegraph pose with energy gathering, beam extending left, beam at full width, beam fading, each frame 128x128 pixels, indigo and red beam tones, game boss sprite sheet, 512x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "giant-vulnerable",
+    filename: "giant-vulnerable-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a massive footnote golem in a stunned vulnerable state, 2 frames in a horizontal strip: dazed wobble left, dazed wobble right, stars and symbols circling head, cracked pages falling, each frame 128x128 pixels, indigo with yellow vulnerability glow, game boss sprite sheet, 256x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "giant-death",
+    filename: "giant-death-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a massive footnote golem collapsing and dying, 4 frames in a horizontal strip: cracking apart, tilting over, crumbling to pieces, scattered pages on ground, each frame 128x128 pixels, fading indigo tones, game boss sprite sheet, 512x128 total`,
+    aspectRatio: "16:9",
+  },
+  // ─── Misprint Seraph sprite sheets (5 total, 128×128 frames) ───
+  {
+    id: "seraph-hover",
+    filename: "seraph-hover-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of an angelic floating seraph creature made of misprinted pages with torn paper wings, 4 frames in a horizontal strip, hovering animation with wing flaps and floating page debris, ethereal white and red corruption tones, halo of punctuation marks, each frame 128x128 pixels, game boss sprite sheet, 512x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "seraph-dive",
+    filename: "seraph-dive-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a paper seraph diving downward in attack, 3 frames in a horizontal strip: wings tucked preparing to dive, mid-dive with wings swept back and speed lines, impact pose at bottom, each frame 128x128 pixels, white and red tones, game boss sprite sheet, 384x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "seraph-cast",
+    filename: "seraph-cast-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a paper seraph casting a glyph spell, 4 frames in a horizontal strip: gathering energy with glowing hands, arms outstretched channeling, energy beams projecting from hands, spell release with page burst, each frame 128x128 pixels, white body with red energy tones, game boss sprite sheet, 512x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "seraph-stagger",
+    filename: "seraph-stagger-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a paper seraph in a stunned staggering state, 2 frames in a horizontal strip: wings drooping and body tilted left, wings drooping and body tilted right, pages falling from body, each frame 128x128 pixels, dimmed white tones, game boss sprite sheet, 256x128 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "seraph-death",
+    filename: "seraph-death-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a paper seraph dissolving in death, 4 frames in a horizontal strip: wings crumpling, body splitting into pages, pages scattering outward, final wisps of paper dust, each frame 128x128 pixels, fading white tones, game boss sprite sheet, 512x128 total`,
+    aspectRatio: "16:9",
+  },
+  // ─── Index Eater sprite sheets (6 total, 128×96 frames) ────────
+  {
+    id: "eater-crawl",
+    filename: "eater-crawl-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a segmented centipede-like creature made of filing tabs and index cards, 4 frames in a horizontal strip, crawling animation with undulating body segments and many tab-legs, tan and dark brown tones, wide low creature, each frame 128x96 pixels, game boss sprite sheet, 512x96 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "eater-lunge",
+    filename: "eater-lunge-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a filing-tab centipede lunging forward to attack, 3 frames in a horizontal strip: coiled back preparing to strike, mid-lunge with body extended and jaws open, full extension with mouth snapping, each frame 128x96 pixels, tan and red danger tones, game boss sprite sheet, 384x96 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "eater-devour",
+    filename: "eater-devour-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a filing-tab centipede devouring a platform, 4 frames in a horizontal strip: mouth opening wide, chomping down on floor piece, chewing with debris, stunned and bloated from overeating, each frame 128x96 pixels, tan with dark ink stain tones, game boss sprite sheet, 512x96 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "eater-spit",
+    filename: "eater-spit-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a filing-tab centipede spitting card projectiles, 3 frames in a horizontal strip: head rearing back, mouth opening with visible cards, cards launching outward in fan pattern, each frame 128x96 pixels, tan body with amber projectile tones, game boss sprite sheet, 384x96 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "eater-stunned",
+    filename: "eater-stunned-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a filing-tab centipede in stunned vulnerable state, 2 frames in a horizontal strip: belly exposed and legs twitching left, belly exposed and legs twitching right, tabs splayed out weakly, each frame 128x96 pixels, pale tan vulnerability tones, game boss sprite sheet, 256x96 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "eater-death",
+    filename: "eater-death-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a filing-tab centipede dying and falling apart, 4 frames in a horizontal strip: body cracking, segments separating, tabs and cards scattering, pile of loose papers on ground, each frame 128x96 pixels, fading tan tones, game boss sprite sheet, 512x96 total`,
+    aspectRatio: "16:9",
+  },
   // Tile sets
   {
     id: "tiles-scribe-hall",
@@ -168,9 +267,27 @@ const ASSET_PROMPTS: AssetPrompt[] = [
     aspectRatio: "16:9",
   },
   {
-    id: "tiles-herbarium",
-    filename: "tiles-herbarium.png",
+    id: "tiles-herbarium-folio",
+    filename: "tiles-herbarium-folio.png",
     prompt: `${STYLE_PREFIX} 2D game tileset for an enchanted botanical garden library, 4 tiles in a row: vine-covered stone floor, mossy stone block, leaf-wrapped column, thorny hedge block, each tile 32x32 pixels, deep green and aged parchment tones, seamless tileable edges, game tileset, 128x32 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "tiles-astral-atlas",
+    filename: "tiles-astral-atlas.png",
+    prompt: `${STYLE_PREFIX} 2D game tileset for a cosmic astral library, 4 tiles in a row: star-glass floor tile with glowing constellation lines, solid constellation block with embedded star patterns, nebula pillar tile with swirling purple-blue gas, void edge wall tile with dark boundary glow, each tile 32x32 pixels, deep navy blue and silver and gold star point tones, seamless tileable edges, game tileset, 128x32 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "tiles-maritime-ledger",
+    filename: "tiles-maritime-ledger.png",
+    prompt: `${STYLE_PREFIX} 2D game tileset for a nautical maritime library, 4 tiles in a row: driftwood plank floor tile with wood grain, coral block tile with barnacle detail, barnacle-encrusted pillar tile, kelp-draped wall tile, each tile 32x32 pixels, teal and sand and weathered wood brown and ocean blue tones, seamless tileable edges, game tileset, 128x32 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "tiles-gothic-errata",
+    filename: "tiles-gothic-errata.png",
+    prompt: `${STYLE_PREFIX} 2D game tileset for a dark gothic library, 4 tiles in a row: cracked stone floor tile with faint red veins, gargoyle-decorated solid block tile, iron column tile with rivets and rust, fog grate wall tile with wisps seeping through, each tile 32x32 pixels, dark charcoal gray and deep crimson and iron black and ash white tones, seamless tileable edges, game tileset, 128x32 total`,
     aspectRatio: "16:9",
   },
 ];
