@@ -19,6 +19,8 @@ import { Redaction } from "@/engine/abilities/Redaction";
 import { PasteOver } from "@/engine/abilities/PasteOver";
 import { IndexMark } from "@/engine/abilities/IndexMark";
 import { DayNightCycle } from "@/engine/world/DayNightCycle";
+import { CorruptionModifiers } from "@/engine/world/CorruptionModifiers";
+import { DayNightRenderer } from "@/engine/world/DayNightRenderer";
 import { GameHUD } from "@/engine/ui/GameHUD";
 import { RoomManager } from "@/engine/world/RoomManager";
 import { VineSystem } from "@/engine/world/VineSystem";
@@ -36,6 +38,7 @@ import {
   renderAbilityPedestal,
 } from "@/engine/world/RoomRenderer";
 import type { Obstacle } from "@/engine/physics/Obstacles";
+import type { SurfaceType } from "@/engine/physics/Surfaces";
 import {
   createSpikes,
   createHazardZone,
@@ -69,7 +72,6 @@ import { GATE_COLORS } from "@/engine/world/Room";
 import type { GateAbility } from "@/engine/world/Room";
 import { HealthPickupManager } from "@/engine/world/HealthPickup";
 import { createFullWorld } from "@/engine/world/demoWorld";
-import { PRESET_ROOM_NAMES } from "@/engine/world/presetRooms";
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -531,6 +533,13 @@ function PlayPageInner() {
             roomManager.currentRoom.healthPickups ?? []
           );
 
+          // Corruption modifiers (night effects)
+          const corruption = new CorruptionModifiers();
+          const baseRiseGravity = player.params.riseGravity;
+          const baseFallGravity = player.params.fallGravity;
+          let originalSurfaces: string[] = [];
+          let effectiveCorruption = 0;
+
           // Biome systems
           let vineSystem: VineSystem | null = null;
           let gravityWellSystem: GravityWellSystem | null = null;
@@ -603,6 +612,9 @@ function PlayPageInner() {
             }
           };
           buildBiomeSystems(roomManager.currentRoom);
+          originalSurfaces = roomManager.currentTileMap.platforms.map(
+            (p) => p.surfaceType ?? "normal"
+          );
 
           // Pause state (managed here, not by GameHUD)
           let paused = false;
@@ -613,20 +625,20 @@ function PlayPageInner() {
 
           // Time tracking for session
           let time = 0;
+          let lastDt = 1 / 60;
 
           // Store ref
           engineRef.current = engine;
 
           // Show initial room name
-          const roomName =
-            PRESET_ROOM_NAMES[roomManager.currentRoom.id] ??
-            roomManager.currentRoom.name;
+          const roomName = roomManager.currentRoom.name ?? roomManager.currentRoom.id;
           hud.showRoomName(roomName);
           session.enterRoom(roomManager.currentRoom.id, roomName);
 
           // ─── Helper: rebuild room systems after transition ────
 
           const rebuildRoomSystems = () => {
+            player.active = true; // Ensure player is active after room transition
             player.tileMap = roomManager.currentTileMap;
             marginStitch.setTileMap(roomManager.currentTileMap);
 
@@ -676,6 +688,12 @@ function PlayPageInner() {
             // Rebuild biome systems for new room
             buildBiomeSystems(roomManager.currentRoom);
 
+            // Reset corruption state for new room
+            corruption.reset();
+            originalSurfaces = roomManager.currentTileMap.platforms.map(
+              (p) => p.surfaceType ?? "normal"
+            );
+
             // Clear fog input remap when leaving a fog room
             input.setActionRemap(null);
           };
@@ -684,6 +702,7 @@ function PlayPageInner() {
 
           engine.onUpdate((dt) => {
             time += dt;
+            lastDt = dt;
 
             // Save notification decay
             if (saveNotifyFrames > 0) saveNotifyFrames--;
@@ -785,8 +804,8 @@ function PlayPageInner() {
 
                 rebuildRoomSystems();
 
-                const newRoomName =
-                  PRESET_ROOM_NAMES[result.roomId] ?? result.roomId;
+                const transRoom = rooms.get(result.roomId);
+                const newRoomName = transRoom?.name ?? result.roomId;
                 hud.showRoomName(newRoomName);
                 session.enterRoom(result.roomId, newRoomName);
 
@@ -798,6 +817,10 @@ function PlayPageInner() {
                     session.openGate(gate.id);
                   }
                 }
+                // Rebuild originalSurfaces after gate opens may have spliced platforms
+                originalSurfaces = roomManager.currentTileMap.platforms.map(
+                  (p) => p.surfaceType ?? "normal"
+                );
 
                 camera.snapTo({
                   x: player.position.x + player.size.x / 2,
@@ -891,6 +914,10 @@ function PlayPageInner() {
                   ) {
                     session.openGate(gate.id);
                     hud.notify(`Gate opened!`, "gate");
+                    // Rebuild originalSurfaces after platform splice
+                    originalSurfaces = roomManager.currentTileMap.platforms.map(
+                      (p) => p.surfaceType ?? "normal"
+                    );
                   }
                 }
               }
@@ -901,6 +928,11 @@ function PlayPageInner() {
               player.position.y >
               roomManager.currentRoom.height + RESPAWN_Y_MARGIN
             ) {
+              // Detach from vine if swinging
+              if (vineSystem?.isSwinging) {
+                vineSystem.detach();
+              }
+              player.active = true;
               const sp = roomManager.currentRoom.defaultSpawn;
               player.position.x = sp.x;
               player.position.y = sp.y;
@@ -909,14 +941,21 @@ function PlayPageInner() {
               player.grounded = false;
               playerHealth.takeDamage(1, { x: 0, y: -0.3 }, "fall");
               session.recordDeath();
+              input.setActionRemap(null);
             }
 
-            // Camera follow
-            const playerCenter: Vec2 = {
-              x: player.position.x + player.size.x / 2,
-              y: player.position.y + player.size.y / 2,
-            };
-            camera.follow(playerCenter, player.velocity, dt);
+            // Camera follow — track swing position when on vine
+            const vineActive = vineSystem?.isSwinging ?? false;
+            const playerCenter: Vec2 = vineActive
+              ? { x: vineSystem!.swingPosition.x, y: vineSystem!.swingPosition.y }
+              : {
+                  x: player.position.x + player.size.x / 2,
+                  y: player.position.y + player.size.y / 2,
+                };
+            const camVelocity = vineActive
+              ? vineSystem!.swingVelocity
+              : player.velocity;
+            camera.follow(playerCenter, camVelocity, dt);
 
             // ─── Biome Systems ───────────────────────────────────
 
@@ -926,31 +965,73 @@ function PlayPageInner() {
             if (vineSystem) {
               vineSystem.swayTime += dt;
               if (vineSystem.isSwinging) {
-                // Update swing physics
-                const newPos = vineSystem.update(
-                  dt,
-                  input.isHeld(InputAction.Left),
-                  input.isHeld(InputAction.Right),
-                  input.isHeld(InputAction.Up),
-                  input.isHeld(InputAction.Down),
-                );
-                player.position.x = newPos.x - player.size.x / 2;
-                player.position.y = newPos.y - player.size.y / 2;
-                player.velocity.x = 0;
-                player.velocity.y = 0;
+                // Suppress normal player physics while swinging
+                player.active = false;
 
-                // Detach on jump
-                if (input.isPressed(InputAction.Jump)) {
+                // Check detach: jump or dash
+                let shouldDetach = false;
+                if (input.isPressed(InputAction.Jump) || input.isPressed(InputAction.Up)) {
+                  shouldDetach = true;
+                }
+                if (input.isPressed(InputAction.Dash) && player.dashAvailable) {
+                  shouldDetach = true;
+                }
+
+                if (shouldDetach) {
                   const releaseVel = vineSystem.detach();
                   player.velocity.x = releaseVel.x;
                   player.velocity.y = releaseVel.y;
+                  player.grounded = false;
+                  player.active = true;
+                } else {
+                  // Update swing physics
+                  const newPos = vineSystem.update(
+                    dt,
+                    input.isHeld(InputAction.Left),
+                    input.isHeld(InputAction.Right),
+                    input.isHeld(InputAction.Up),
+                    input.isHeld(InputAction.Down),
+                  );
+
+                  // Check collision with platforms — auto-detach if swinging into a wall
+                  const swingBounds = {
+                    x: newPos.x - player.size.x / 2,
+                    y: newPos.y - player.size.y / 2,
+                    width: player.size.x,
+                    height: player.size.y,
+                  };
+                  let collides = false;
+                  for (const plat of roomManager.currentTileMap.platforms) {
+                    if (
+                      swingBounds.x < plat.x + plat.width &&
+                      swingBounds.x + swingBounds.width > plat.x &&
+                      swingBounds.y < plat.y + plat.height &&
+                      swingBounds.y + swingBounds.height > plat.y
+                    ) {
+                      collides = true;
+                      break;
+                    }
+                  }
+
+                  if (collides) {
+                    const releaseVel = vineSystem.detach();
+                    player.velocity.x = releaseVel.x * 0.5;
+                    player.velocity.y = releaseVel.y * 0.5;
+                    player.grounded = false;
+                    player.active = true;
+                  } else {
+                    player.position.x = newPos.x - player.size.x / 2;
+                    player.position.y = newPos.y - player.size.y / 2;
+                  }
                 }
               } else {
-                // Check for vine attach when jumping near a vine
-                if (input.isPressed(InputAction.Jump)) {
+                // Check for vine attach — use Ability1 (E) near a vine anchor
+                // Priority: vine attach takes precedence over Margin Stitch when in range
+                if (input.isPressed(InputAction.Ability1)) {
                   const nearest = vineSystem.findNearestAnchor(playerCenter);
                   if (nearest) {
                     vineSystem.attach(nearest, playerCenter, player.velocity);
+                    player.active = false;
                   }
                 }
               }
@@ -1078,12 +1159,14 @@ function PlayPageInner() {
 
             // ─── Abilities ──────────────────────────────────────
 
-            // Margin Stitch
+            // Margin Stitch (skip if vine swinging — both use Ability1/E)
+            const vineSwinging = vineSystem?.isSwinging ?? false;
             marginStitch.scanForPairs(
               playerCenter,
               roomManager.currentTileMap
             );
             if (
+              !vineSwinging &&
               input.isPressed(InputAction.Ability1) &&
               marginStitch.canActivate
             ) {
@@ -1197,12 +1280,75 @@ function PlayPageInner() {
                   session.defeatBoss(bossId);
                   roomManager.openBossGate(bossId);
                   hud.notify("Boss defeated — gate opened!", "gate");
+                  // Rebuild originalSurfaces after platform splice
+                  originalSurfaces = roomManager.currentTileMap.platforms.map(
+                    (p) => p.surfaceType ?? "normal"
+                  );
                 }
               }
             }
 
             // Day/Night
             dayNight.update(dt);
+
+            // ─── Corruption Modifiers ────────────────────────────
+            // Hub rooms are immune to corruption
+            const isHubRoom = roomManager.currentRoom.id === "scribe-hall";
+            effectiveCorruption = isHubRoom ? 0 : dayNight.corruptionIntensity;
+
+            corruption.update(
+              dt,
+              effectiveCorruption,
+              roomManager.currentTileMap.platforms.length,
+              CANVAS_WIDTH,
+              CANVAS_HEIGHT,
+            );
+
+            // Surface flip: restore originals then apply corrupted surfaces
+            if (corruption.isSurfaceFlipActive()) {
+              const platforms = roomManager.currentTileMap.platforms;
+              for (let i = 0; i < originalSurfaces.length && i < platforms.length; i++) {
+                platforms[i].surfaceType = corruption.getEffectiveSurface(originalSurfaces[i]) as SurfaceType;
+              }
+            } else {
+              const platforms = roomManager.currentTileMap.platforms;
+              for (let i = 0; i < originalSurfaces.length && i < platforms.length; i++) {
+                platforms[i].surfaceType = (originalSurfaces[i] as SurfaceType) ?? "normal";
+              }
+            }
+
+            // Gravity pulse: modulate player gravity during pulse
+            // Only apply corruption gravity when NOT in a gravity well room
+            if (!gravityWellSystem) {
+              const gravMult = corruption.getGravityMultiplier();
+              if (gravMult !== 1.0) {
+                player.params.riseGravity = baseRiseGravity * gravMult;
+                player.params.fallGravity = baseFallGravity * gravMult;
+              } else {
+                player.params.riseGravity = baseRiseGravity;
+                player.params.fallGravity = baseFallGravity;
+              }
+            }
+
+            // Ink bleed: spawn atmospheric particles
+            for (const _pos of corruption.pendingInkBleeds) {
+              const viewBounds = camera.getViewportBounds();
+              particleSystem.emit({
+                x: viewBounds.x + Math.random() * viewBounds.width,
+                y: viewBounds.y,
+                count: 1,
+                speedMin: 10,
+                speedMax: 40,
+                angleMin: Math.PI * 0.3,
+                angleMax: Math.PI * 0.7,
+                lifeMin: 0.3,
+                lifeMax: 0.8,
+                sizeMin: 2,
+                sizeMax: 5,
+                colors: ["#4338ca", "#6366f1", "#1e1b4b", "#312e81"],
+                gravity: 30,
+              });
+            }
 
             // Particles + shake
             particleSystem.update(dt);
@@ -1248,6 +1394,21 @@ function PlayPageInner() {
               }
             }
 
+            // Platform flicker overlay (corruption)
+            if (corruption.getModifier("platform-flicker")?.active) {
+              const platforms = roomManager.currentTileMap.platforms;
+              for (let i = 0; i < platforms.length; i++) {
+                if (corruption.isPlatformFlickering(i)) {
+                  const p = platforms[i];
+                  rCtx.save();
+                  rCtx.globalAlpha = 0.3 + Math.random() * 0.4;
+                  rCtx.fillStyle = "#000";
+                  rCtx.fillRect(p.x, p.y, p.width, p.height);
+                  rCtx.restore();
+                }
+              }
+            }
+
             // Health pickups
             pickupManager.render(rCtx, camera, time);
 
@@ -1284,14 +1445,16 @@ function PlayPageInner() {
 
             // Biome system world-space rendering
             if (vineSystem) {
-              const pc: Vec2 = {
-                x: player.position.x + player.size.x / 2,
-                y: player.position.y + player.size.y / 2,
-              };
-              vineSystem.render(rCtx, false, false, pc, engine.getLastDt());
+              const pc: Vec2 | null = vineSystem.isSwinging
+                ? null
+                : {
+                    x: player.position.x + player.size.x / 2,
+                    y: player.position.y + player.size.y / 2,
+                  };
+              vineSystem.render(rCtx, false, false, pc, lastDt);
             }
             if (gravityWellSystem) {
-              gravityWellSystem.render(rCtx, camera.position, time, engine.getLastDt());
+              gravityWellSystem.render(rCtx, camera.position, time, lastDt);
             }
             if (currentSystem) {
               currentSystem.renderFlow(rCtx);
@@ -1321,22 +1484,39 @@ function PlayPageInner() {
             // Particles
             particleSystem.render(renderer);
 
-            // Player (with invincibility blink)
+            // Player (with invincibility blink + vine rotation)
             const showPlayer =
               playerHealth.invincibilityTimer <= 0 ||
               Math.floor(playerHealth.invincibilityTimer / 4) % 2 === 0;
 
             if (showPlayer) {
+              const isSwinging = vineSystem?.isSwinging ?? false;
+              const renderPlayer = () => {
+                if (isSwinging && vineSystem) {
+                  // Render with vine swing rotation
+                  const cx = player.position.x + player.size.x / 2;
+                  const cy = player.position.y + player.size.y / 2;
+                  rCtx.save();
+                  rCtx.translate(cx, cy);
+                  rCtx.rotate(vineSystem.angle * 0.3);
+                  rCtx.translate(-cx, -cy);
+                  player.render(renderer, 0);
+                  rCtx.restore();
+                } else {
+                  player.render(renderer, 0);
+                }
+              };
+
               if (
                 playerHealth.invincibilityTimer > 0 &&
                 playerHealth.knockbackTimer > 0
               ) {
                 const oldColor = player.color;
                 player.color = "#ef4444";
-                player.render(renderer, 0);
+                renderPlayer();
                 player.color = oldColor;
               } else {
-                player.render(renderer, 0);
+                renderPlayer();
               }
             }
           });
@@ -1360,6 +1540,41 @@ function PlayPageInner() {
                 CANVAS_HEIGHT,
               );
               fogSystem.renderControlEffects(screenCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
+            }
+
+            // Corruption fog-of-war (night) — only if biome fog isn't already active
+            if (corruption.isFogActive() && !fogSystem) {
+              const playerScreenPos = camera.worldToScreen({
+                x: player.position.x + player.size.x / 2,
+                y: player.position.y + player.size.y / 2,
+              });
+              DayNightRenderer.renderFogOfWar(
+                screenCtx,
+                playerScreenPos,
+                corruption.getFogRadius(),
+                "rgba(10, 10, 26, 0.85)",
+                CANVAS_WIDTH,
+                CANVAS_HEIGHT,
+              );
+            }
+
+            // Corruption chromatic distortion (>0.5 corruption only)
+            if (effectiveCorruption > 0.5) {
+              DayNightRenderer.renderCorruptionDistortion(
+                screenCtx,
+                effectiveCorruption,
+                CANVAS_WIDTH,
+                CANVAS_HEIGHT,
+              );
+            }
+
+            // Gravity pulse visual indicator
+            if (corruption.gravityPulseActive) {
+              screenCtx.fillStyle = "rgba(239, 68, 68, 0.15)";
+              screenCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+              screenCtx.fillStyle = "rgba(239, 68, 68, 0.6)";
+              screenCtx.fillRect(0, 0, CANVAS_WIDTH, 3);
+              screenCtx.fillRect(0, CANVAS_HEIGHT - 3, CANVAS_WIDTH, 3);
             }
 
             // HUD (always visible)
