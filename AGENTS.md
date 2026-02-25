@@ -207,7 +207,7 @@ Abilities live in `src/engine/abilities/`. They are **world-editing systems**, n
 | 3 | Ink Cards | Done |
 | 4 | Room Editor | Done |
 
-### Phase 5 — Remaining Content (In Progress)
+### Phase 5 — Remaining Content (Complete)
 
 | Step | Feature | Status |
 |------|---------|--------|
@@ -217,16 +217,16 @@ Abilities live in `src/engine/abilities/`. They are **world-editing systems**, n
 | 4 | Maritime Ledger (biome) | Done |
 | 5 | Gothic Errata (biome) | Done |
 
-### Phase 6 — Integration & Polish (In Progress)
+### Phase 6 — Integration & Polish (Complete)
 
 | Step | Feature | Status |
 |------|---------|--------|
 | 1 | Game World Assembly | Done |
-| 2 | Asset Pipeline & Sprites | In progress |
+| 2 | Asset Pipeline & Sprites | Done |
 | 3 | Convex Save System | Done |
-| 4 | HUD & Game UI | In progress |
-| 5 | Main Menu & Game Flow | In progress |
-| 6 | Herbarium Wing Rooms (content) | In progress |
+| 4 | HUD & Game UI | Done |
+| 5 | Main Menu & Game Flow | Done |
+| 6 | Herbarium Wing Rooms (content) | Done |
 
 ### Boss Pattern
 Bosses follow the `FootnoteGiant` pattern in `src/engine/entities/bosses/`:
