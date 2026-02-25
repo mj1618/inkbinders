@@ -3,10 +3,17 @@ import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { ScreenShake } from "@/engine/core/ScreenShake";
 import type { Camera } from "@/engine/core/Camera";
 import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
 import type { Vec2, Rect } from "@/lib/types";
 import type { MisprintSeraphParams } from "./MisprintSeraphParams";
 import { DEFAULT_MISPRINT_SERAPH_PARAMS } from "./MisprintSeraphParams";
 import type { DamageZone } from "./types";
+import {
+  SERAPH_SPRITE_CONFIGS,
+  SERAPH_ANIMATIONS,
+  SERAPH_STATE_TO_ANIMATION,
+} from "./BossSprites";
 
 // ─── Sub-entity types ──────────────────────────────────────────────
 
@@ -167,6 +174,11 @@ export class MisprintSeraph {
   // Desperation slam used flag
   private desperationUsed = false;
 
+  // Sprite animation
+  private animControllers = new Map<string, AnimationController>();
+  private activeAnimController: AnimationController | null = null;
+  private spritesReady = false;
+
   constructor(position?: Vec2, params?: Partial<MisprintSeraphParams>) {
     this.params = { ...DEFAULT_MISPRINT_SERAPH_PARAMS, ...params };
     this.health = this.params.maxHealth;
@@ -185,6 +197,30 @@ export class MisprintSeraph {
     this.stateMachine = new StateMachine<MisprintSeraph>(this);
     this.registerStates();
     this.stateMachine.setState("IDLE");
+    this.initSprites();
+  }
+
+  // ─── Sprite Initialization ─────────────────────────────────────
+
+  private initSprites(): void {
+    const assetManager = AssetManager.getInstance();
+    assetManager.loadAll(SERAPH_SPRITE_CONFIGS).then(() => {
+      for (const config of SERAPH_SPRITE_CONFIGS) {
+        const sheet = assetManager.getSpriteSheet(config.id);
+        if (sheet) {
+          const anims = SERAPH_ANIMATIONS[config.id];
+          if (anims) {
+            for (const anim of anims) {
+              sheet.addAnimation(anim);
+            }
+          }
+          this.animControllers.set(config.id, new AnimationController(sheet));
+        }
+      }
+      this.spritesReady = true;
+    }).catch(() => {
+      // Sprite loading failed — fall back to rectangle rendering
+    });
   }
 
   // ─── State Registration ────────────────────────────────────────
@@ -1256,6 +1292,19 @@ export class MisprintSeraph {
       this.bodyShakeOffset.x = 0;
       this.bodyShakeOffset.y = 0;
     }
+
+    // Sprite animation update
+    const stateAnim = SERAPH_STATE_TO_ANIMATION[this.stateMachine.getCurrentState()];
+    if (stateAnim && this.spritesReady) {
+      const controller = this.animControllers.get(stateAnim.sheetId);
+      if (controller) {
+        if (this.activeAnimController !== controller) {
+          this.activeAnimController = controller;
+        }
+        controller.play(stateAnim.animName);
+        controller.update(dt);
+      }
+    }
   }
 
   private updateProjectiles(dt: number): void {
@@ -1404,25 +1453,8 @@ export class MisprintSeraph {
 
   render(ctx: CanvasRenderingContext2D, _camera: Camera): void {
     const state = this.stateMachine.getCurrentState();
+    const mode = RenderConfig.getMode();
     if (state === "DEAD") return;
-
-    // Sprite mode placeholder (until real boss sprites are added)
-    if (RenderConfig.getMode() === "sprites") {
-      ctx.save();
-      if (state === "DYING") {
-        ctx.globalAlpha = Math.max(0, this.stateTimer / DEATH_DURATION);
-      }
-      ctx.globalAlpha *= this.teleportAlpha;
-      ctx.fillStyle = this.hitFlashTimer > 0 ? "#ffffff" : "#f8fafc";
-      ctx.fillRect(this.position.x, this.position.y, this.size.x, this.size.y);
-      ctx.fillStyle = "#1e1b4b";
-      ctx.font = "bold 10px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("Misprint Seraph", this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + 4);
-      ctx.textAlign = "left";
-      ctx.restore();
-      return;
-    }
 
     const bx = this.position.x + this.bodyShakeOffset.x;
     const by = this.position.y + this.bodyShakeOffset.y;
@@ -1442,6 +1474,52 @@ export class MisprintSeraph {
     const isFlashing = this.hitFlashTimer > 0;
     const centerX = bx + this.size.x / 2;
     const centerY = by + this.size.y / 2;
+
+    // ─── Sprite body rendering ──────────────────────────────
+    if (mode === "sprites" || mode === "both") {
+      if (this.spritesReady && this.activeAnimController) {
+        const sheet = this.activeAnimController.getSpriteSheet();
+        if (sheet.isLoaded()) {
+          const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
+          const spriteOffsetY = sheet.config.frameHeight - this.size.y;
+          const drawX = bx - spriteOffsetX;
+          const drawY = by - spriteOffsetY;
+
+          this.activeAnimController.draw(ctx, drawX, drawY, false);
+
+          // Hit flash overlay on top of sprite
+          if (isFlashing) {
+            ctx.globalAlpha = alpha * 0.7;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(drawX, drawY, sheet.config.frameWidth, sheet.config.frameHeight);
+            ctx.globalAlpha = alpha;
+          }
+
+          // Phase 2/3 red glow overlay
+          if (this.currentPhase >= 2) {
+            ctx.globalAlpha = alpha * 0.15;
+            ctx.fillStyle = "#ef4444";
+            ctx.fillRect(drawX, drawY, sheet.config.frameWidth, sheet.config.frameHeight);
+            ctx.globalAlpha = alpha;
+          }
+        }
+      } else {
+        // Placeholder fallback
+        ctx.fillStyle = isFlashing ? "#ffffff" : "#f8fafc";
+        ctx.fillRect(bx, by, this.size.x, this.size.y);
+        ctx.fillStyle = "#1e1b4b";
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("Misprint Seraph", bx + this.size.x / 2, by + this.size.y / 2 + 4);
+        ctx.textAlign = "left";
+      }
+    }
+
+    // ─── Rectangle body rendering ───────────────────────────
+    if (mode === "rectangles" || mode === "both") {
+      if (mode === "both") {
+        ctx.globalAlpha = alpha * 0.5;
+      }
 
     // ─── Wings ───────────────────────────────────────────
     const wingExtent = (this.params.wingSpan - this.size.x) / 2;
@@ -1568,7 +1646,12 @@ export class MisprintSeraph {
     ctx.setLineDash([]);
     ctx.restore();
 
-    // ─── Beam telegraph / fire ───────────────────────────
+      if (mode === "both") {
+        ctx.globalAlpha = alpha;
+      }
+    } // end rectangle body rendering
+
+    // ─── Beam telegraph / fire (ALWAYS drawn regardless of mode) ───
     if (state === "BEAM_TELEGRAPH" || state === "TRIPLE_BEAM_TELEGRAPH") {
       const progress = 1 - this.stateTimer / this.params.beamTelegraph;
       const pulseAlpha = 0.3 + Math.sin(this.frameCounter * 0.3) * 0.2;

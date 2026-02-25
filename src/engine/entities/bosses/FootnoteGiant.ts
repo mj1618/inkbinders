@@ -3,10 +3,17 @@ import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { ScreenShake } from "@/engine/core/ScreenShake";
 import type { Camera } from "@/engine/core/Camera";
 import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
 import type { Vec2, Rect } from "@/lib/types";
 import type { FootnoteGiantParams } from "./FootnoteGiantParams";
 import { DEFAULT_FOOTNOTE_GIANT_PARAMS } from "./FootnoteGiantParams";
 import type { DamageZone } from "./types";
+import {
+  GIANT_SPRITE_CONFIGS,
+  GIANT_ANIMATIONS,
+  GIANT_STATE_TO_ANIMATION,
+} from "./BossSprites";
 
 // ─── Sub-entity types ──────────────────────────────────────────────
 
@@ -180,6 +187,11 @@ export class FootnoteGiant {
   // Total damage tracking
   totalDamageReceived = 0;
 
+  // Sprite animation
+  private animControllers = new Map<string, AnimationController>();
+  private activeAnimController: AnimationController | null = null;
+  private spritesReady = false;
+
   constructor(params?: Partial<FootnoteGiantParams>) {
     this.params = { ...DEFAULT_FOOTNOTE_GIANT_PARAMS, ...params };
     this.health = this.params.maxHealth;
@@ -191,6 +203,30 @@ export class FootnoteGiant {
     this.stateMachine = new StateMachine<FootnoteGiant>(this);
     this.registerStates();
     this.stateMachine.setState("IDLE");
+    this.initSprites();
+  }
+
+  // ─── Sprite Initialization ─────────────────────────────────────
+
+  private initSprites(): void {
+    const assetManager = AssetManager.getInstance();
+    assetManager.loadAll(GIANT_SPRITE_CONFIGS).then(() => {
+      for (const config of GIANT_SPRITE_CONFIGS) {
+        const sheet = assetManager.getSpriteSheet(config.id);
+        if (sheet) {
+          const anims = GIANT_ANIMATIONS[config.id];
+          if (anims) {
+            for (const anim of anims) {
+              sheet.addAnimation(anim);
+            }
+          }
+          this.animControllers.set(config.id, new AnimationController(sheet));
+        }
+      }
+      this.spritesReady = true;
+    }).catch(() => {
+      // Sprite loading failed — fall back to rectangle rendering
+    });
   }
 
   // ─── State Registration ────────────────────────────────────────
@@ -952,6 +988,19 @@ export class FootnoteGiant {
       this.bodyShakeOffset.x = 0;
       this.bodyShakeOffset.y = 0;
     }
+
+    // Sprite animation update
+    const stateAnim = GIANT_STATE_TO_ANIMATION[this.stateMachine.getCurrentState()];
+    if (stateAnim && this.spritesReady) {
+      const controller = this.animControllers.get(stateAnim.sheetId);
+      if (controller) {
+        if (this.activeAnimController !== controller) {
+          this.activeAnimController = controller;
+        }
+        controller.play(stateAnim.animName);
+        controller.update(dt);
+      }
+    }
   }
 
   private updateProjectiles(dt: number): void {
@@ -1126,26 +1175,10 @@ export class FootnoteGiant {
 
   render(ctx: CanvasRenderingContext2D, _camera: Camera): void {
     const state = this.stateMachine.getCurrentState();
+    const mode = RenderConfig.getMode();
 
     // Don't render if dead
     if (state === "DEAD") return;
-
-    // Sprite mode placeholder (until real boss sprites are added)
-    if (RenderConfig.getMode() === "sprites") {
-      ctx.save();
-      if (state === "DYING") {
-        ctx.globalAlpha = Math.max(0, this.stateTimer / DEATH_DURATION);
-      }
-      ctx.fillStyle = this.hitFlashTimer > 0 ? "#ffffff" : "#4338ca";
-      ctx.fillRect(this.position.x, this.position.y, this.size.x, this.size.y);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 10px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("Footnote Giant", this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + 4);
-      ctx.textAlign = "left";
-      ctx.restore();
-      return;
-    }
 
     const bx = this.position.x + this.bodyShakeOffset.x;
     const by = this.position.y + this.bodyShakeOffset.y;
@@ -1162,52 +1195,104 @@ export class FootnoteGiant {
     // Hit flash
     const isFlashing = this.hitFlashTimer > 0;
 
-    // ─── Bracket base ───────────────────────────────────────
-    const bracketY = by + this.size.y - BRACKET_HEIGHT;
-    const bracketColor = isFlashing ? "#ffffff" : "#1e1b4b";
-    ctx.fillStyle = bracketColor;
-    ctx.fillRect(bx, bracketY, this.size.x, BRACKET_HEIGHT);
+    // ─── Sprite body rendering ──────────────────────────────
+    if (mode === "sprites" || mode === "both") {
+      if (this.spritesReady && this.activeAnimController) {
+        const sheet = this.activeAnimController.getSpriteSheet();
+        if (sheet.isLoaded()) {
+          // Center sprite over boss position, align bottom
+          const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
+          const spriteOffsetY = sheet.config.frameHeight - this.size.y;
+          const drawX = bx - spriteOffsetX;
+          const drawY = by - spriteOffsetY;
 
-    // Bracket details (vertical lines on sides)
-    ctx.fillStyle = isFlashing ? "#ffffff" : "#4338ca";
-    ctx.fillRect(bx, bracketY, 6, BRACKET_HEIGHT);
-    ctx.fillRect(bx + this.size.x - 6, bracketY, 6, BRACKET_HEIGHT);
+          this.activeAnimController.draw(ctx, drawX, drawY, false);
 
-    // ─── Glyph stack ────────────────────────────────────────
-    const glyphStartY = by + this.size.y - BRACKET_HEIGHT - GLYPH_SYMBOLS.length * GLYPH_HEIGHT;
-    ctx.font = GLYPH_FONT;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+          // Hit flash: draw white overlay on top of sprite
+          if (isFlashing) {
+            ctx.globalAlpha = deathAlpha * 0.7;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(drawX, drawY, sheet.config.frameWidth, sheet.config.frameHeight);
+            ctx.globalAlpha = deathAlpha;
+          }
 
-    for (let i = 0; i < GLYPH_SYMBOLS.length; i++) {
-      const gx = bx + this.size.x / 2 + this.glyphOffsets[i].x;
-      const gy = glyphStartY + i * GLYPH_HEIGHT + GLYPH_HEIGHT / 2 + this.glyphOffsets[i].y;
-
-      // Phase 3: red glyphs
-      let glyphColor: string;
-      let strokeColor: string;
-      if (this.currentPhase === 3) {
-        glyphColor = isFlashing ? "#ffffff" : "#ef4444";
-        strokeColor = isFlashing ? "#ffffff" : "#991b1b";
+          // Phase 3 red tint overlay
+          if (this.currentPhase === 3) {
+            ctx.globalAlpha = deathAlpha * 0.15;
+            ctx.fillStyle = "#ef4444";
+            ctx.fillRect(drawX, drawY, sheet.config.frameWidth, sheet.config.frameHeight);
+            ctx.globalAlpha = deathAlpha;
+          }
+        }
       } else {
-        glyphColor = isFlashing ? "#ffffff" : "#a5b4fc";
-        strokeColor = isFlashing ? "#ffffff" : "#4338ca";
+        // Placeholder fallback
+        ctx.fillStyle = isFlashing ? "#ffffff" : "#4338ca";
+        ctx.fillRect(bx, by, this.size.x, this.size.y);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("Footnote Giant", bx + this.size.x / 2, by + this.size.y / 2 + 4);
+        ctx.textAlign = "left";
       }
-
-      // Glyph stroke
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 2;
-      ctx.strokeText(GLYPH_SYMBOLS[i], gx, gy);
-
-      // Glyph fill
-      ctx.fillStyle = glyphColor;
-      ctx.fillText(GLYPH_SYMBOLS[i], gx, gy);
     }
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
+    // ─── Rectangle body rendering ───────────────────────────
+    if (mode === "rectangles" || mode === "both") {
+      if (mode === "both") {
+        ctx.globalAlpha = deathAlpha * 0.5;
+      }
 
-    // ─── Attack telegraphs ──────────────────────────────────
+      // ─── Bracket base ───────────────────────────────────────
+      const bracketY = by + this.size.y - BRACKET_HEIGHT;
+      const bracketColor = isFlashing ? "#ffffff" : "#1e1b4b";
+      ctx.fillStyle = bracketColor;
+      ctx.fillRect(bx, bracketY, this.size.x, BRACKET_HEIGHT);
+
+      // Bracket details (vertical lines on sides)
+      ctx.fillStyle = isFlashing ? "#ffffff" : "#4338ca";
+      ctx.fillRect(bx, bracketY, 6, BRACKET_HEIGHT);
+      ctx.fillRect(bx + this.size.x - 6, bracketY, 6, BRACKET_HEIGHT);
+
+      // ─── Glyph stack ────────────────────────────────────────
+      const glyphStartY = by + this.size.y - BRACKET_HEIGHT - GLYPH_SYMBOLS.length * GLYPH_HEIGHT;
+      ctx.font = GLYPH_FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      for (let i = 0; i < GLYPH_SYMBOLS.length; i++) {
+        const gx = bx + this.size.x / 2 + this.glyphOffsets[i].x;
+        const gy = glyphStartY + i * GLYPH_HEIGHT + GLYPH_HEIGHT / 2 + this.glyphOffsets[i].y;
+
+        // Phase 3: red glyphs
+        let glyphColor: string;
+        let strokeColor: string;
+        if (this.currentPhase === 3) {
+          glyphColor = isFlashing ? "#ffffff" : "#ef4444";
+          strokeColor = isFlashing ? "#ffffff" : "#991b1b";
+        } else {
+          glyphColor = isFlashing ? "#ffffff" : "#a5b4fc";
+          strokeColor = isFlashing ? "#ffffff" : "#4338ca";
+        }
+
+        // Glyph stroke
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2;
+        ctx.strokeText(GLYPH_SYMBOLS[i], gx, gy);
+
+        // Glyph fill
+        ctx.fillStyle = glyphColor;
+        ctx.fillText(GLYPH_SYMBOLS[i], gx, gy);
+      }
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+
+      if (mode === "both") {
+        ctx.globalAlpha = deathAlpha;
+      }
+    }
+
+    // ─── Attack telegraphs (ALWAYS drawn regardless of mode) ──
 
     // Pillar slam danger zone
     if (

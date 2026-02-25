@@ -3,11 +3,18 @@ import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { ScreenShake } from "@/engine/core/ScreenShake";
 import type { Camera } from "@/engine/core/Camera";
 import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
 import type { Vec2, Rect } from "@/lib/types";
 import type { Platform } from "@/engine/physics/TileMap";
 import type { IndexEaterParams } from "./IndexEaterParams";
 import { DEFAULT_INDEX_EATER_PARAMS } from "./IndexEaterParams";
 import type { DamageZone } from "./types";
+import {
+  EATER_SPRITE_CONFIGS,
+  EATER_ANIMATIONS,
+  EATER_STATE_TO_ANIMATION,
+} from "./BossSprites";
 
 // ─── Sub-entity types ──────────────────────────────────────────────
 
@@ -205,6 +212,11 @@ export class IndexEater {
   // Player tracking
   private playerPosition: Vec2 = { x: 0, y: 0 };
 
+  // Sprite animation
+  private animControllers = new Map<string, AnimationController>();
+  private activeAnimController: AnimationController | null = null;
+  private spritesReady = false;
+
   constructor(position?: Vec2, params?: Partial<IndexEaterParams>) {
     this.params = { ...DEFAULT_INDEX_EATER_PARAMS, ...params };
     this.health = this.params.maxHealth;
@@ -216,6 +228,30 @@ export class IndexEater {
     this.stateMachine = new StateMachine<IndexEater>(this);
     this.registerStates();
     this.stateMachine.setState("IDLE");
+    this.initSprites();
+  }
+
+  // ─── Sprite Initialization ─────────────────────────────────────
+
+  private initSprites(): void {
+    const assetManager = AssetManager.getInstance();
+    assetManager.loadAll(EATER_SPRITE_CONFIGS).then(() => {
+      for (const config of EATER_SPRITE_CONFIGS) {
+        const sheet = assetManager.getSpriteSheet(config.id);
+        if (sheet) {
+          const anims = EATER_ANIMATIONS[config.id];
+          if (anims) {
+            for (const anim of anims) {
+              sheet.addAnimation(anim);
+            }
+          }
+          this.animControllers.set(config.id, new AnimationController(sheet));
+        }
+      }
+      this.spritesReady = true;
+    }).catch(() => {
+      // Sprite loading failed — fall back to rectangle rendering
+    });
   }
 
   // ─── State Registration ────────────────────────────────────────
@@ -1503,6 +1539,19 @@ export class IndexEater {
 
     // Update shockwaves
     this.updateShockwaves(dt);
+
+    // Sprite animation update
+    const stateAnim = EATER_STATE_TO_ANIMATION[this.stateMachine.getCurrentState()];
+    if (stateAnim && this.spritesReady) {
+      const controller = this.animControllers.get(stateAnim.sheetId);
+      if (controller) {
+        if (this.activeAnimController !== controller) {
+          this.activeAnimController = controller;
+        }
+        controller.play(stateAnim.animName);
+        controller.update(dt);
+      }
+    }
   }
 
   private updateProjectiles(dt: number): void {
@@ -1734,25 +1783,8 @@ export class IndexEater {
 
   render(ctx: CanvasRenderingContext2D, _camera: Camera): void {
     const state = this.stateMachine.getCurrentState();
+    const mode = RenderConfig.getMode();
     if (state === "DEAD") return;
-
-    // Sprite mode placeholder (until real boss sprites are added)
-    if (RenderConfig.getMode() === "sprites") {
-      ctx.save();
-      if (state === "DYING") {
-        const deathProg = 1 - this.stateTimer / DEATH_DURATION;
-        ctx.globalAlpha = Math.max(0, 1 - deathProg);
-      }
-      ctx.fillStyle = this.hitFlashTimer > 0 ? "#ffffff" : "#365314";
-      ctx.fillRect(this.position.x, this.position.y, this.size.x, this.size.y);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 10px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("Index Eater", this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + 4);
-      ctx.textAlign = "left";
-      ctx.restore();
-      return;
-    }
 
     const isFlashing = this.hitFlashTimer > 0;
     const deathProgress = state === "DYING" ? 1 - this.stateTimer / DEATH_DURATION : 0;
@@ -1772,6 +1804,46 @@ export class IndexEater {
       ctx.rotate(this.bodyRotation);
       ctx.translate(-cx, -cy);
     }
+
+    // ─── Sprite body rendering ──────────────────────────────
+    if (mode === "sprites" || mode === "both") {
+      if (this.spritesReady && this.activeAnimController) {
+        const sheet = this.activeAnimController.getSpriteSheet();
+        if (sheet.isLoaded()) {
+          // Center sprite over boss center, the rotation is already applied above
+          const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
+          const spriteOffsetY = sheet.config.frameHeight - this.size.y;
+          const drawX = this.position.x - spriteOffsetX;
+          const drawY = this.position.y - spriteOffsetY;
+
+          this.activeAnimController.draw(ctx, drawX, drawY, !this.facingRight);
+
+          // Hit flash overlay on top of sprite
+          if (isFlashing) {
+            const savedAlpha = ctx.globalAlpha;
+            ctx.globalAlpha = savedAlpha * 0.7;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(drawX, drawY, sheet.config.frameWidth, sheet.config.frameHeight);
+            ctx.globalAlpha = savedAlpha;
+          }
+        }
+      } else {
+        // Placeholder fallback
+        ctx.fillStyle = isFlashing ? "#ffffff" : "#8b5cf6";
+        ctx.fillRect(this.position.x, this.position.y, this.size.x, this.size.y);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("Index Eater", this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + 4);
+        ctx.textAlign = "left";
+      }
+    }
+
+    // ─── Rectangle body rendering ───────────────────────────
+    if (mode === "rectangles" || mode === "both") {
+      if (mode === "both") {
+        ctx.globalAlpha = ctx.globalAlpha * 0.5;
+      }
 
     // ─── Body Segments ───────────────────────────────────
     const segW = this.params.segmentWidth;
@@ -1976,7 +2048,13 @@ export class IndexEater {
       }
     }
 
-    // ─── Chain Storm Rendering ────────────────────────
+      if (mode === "both") {
+        // Restore alpha from the 0.5 reduction
+        ctx.globalAlpha = state === "DYING" ? Math.max(0, 1 - deathProgress) : 1;
+      }
+    } // end rectangle body rendering
+
+    // ─── Chain Storm Rendering (ALWAYS drawn regardless of mode) ──
     if (state === "CHAIN_STORM_TELEGRAPH" || state === "CHAIN_STORM_ACTIVE") {
       const chainCount = this.params.chainStormChainCount;
       const isActive = state === "CHAIN_STORM_ACTIVE";
