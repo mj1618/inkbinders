@@ -22,6 +22,7 @@ import { DayNightCycle } from "@/engine/world/DayNightCycle";
 import { CorruptionModifiers } from "@/engine/world/CorruptionModifiers";
 import { DayNightRenderer } from "@/engine/world/DayNightRenderer";
 import { GameHUD } from "@/engine/ui/GameHUD";
+import { VictoryScreen } from "@/engine/ui/VictoryScreen";
 import { RoomManager } from "@/engine/world/RoomManager";
 import { VineSystem } from "@/engine/world/VineSystem";
 import type { VineAnchor } from "@/engine/world/VineSystem";
@@ -623,6 +624,10 @@ function PlayPageInner() {
           let confirmingQuit = false;
           let confirmQuitSelection = 0;
 
+          // Victory state
+          let victoryTriggered = false;
+          let victoryScreen: VictoryScreen | null = null;
+
           // Time tracking for session
           let time = 0;
           let lastDt = 1 / 60;
@@ -703,6 +708,25 @@ function PlayPageInner() {
           engine.onUpdate((dt) => {
             time += dt;
             lastDt = dt;
+
+            // Victory screen takes priority over everything
+            if (victoryScreen) {
+              const anyKey =
+                input.isPressed(InputAction.Jump) ||
+                input.isPressed(InputAction.Attack) ||
+                input.isPressed(InputAction.Dash) ||
+                input.isPressed(InputAction.Pause) ||
+                input.isPressed(InputAction.Left) ||
+                input.isPressed(InputAction.Right) ||
+                input.isPressed(InputAction.Up) ||
+                input.isPressed(InputAction.Down);
+              victoryScreen.update(dt, anyKey);
+              if (victoryScreen.done) {
+                engine.stop();
+                router.push("/");
+              }
+              return;
+            }
 
             // Save notification decay
             if (saveNotifyFrames > 0) saveNotifyFrames--;
@@ -831,6 +855,31 @@ function PlayPageInner() {
                 session.setHealth(playerHealth.health, playerHealth.maxHealth);
                 doSave();
                 hud.notify("Auto-saved", "info");
+
+                // Victory check: all 3 main bosses defeated + entered hub
+                if (!victoryTriggered && result.roomId === "scribe-hall") {
+                  const defeated = session.getState().defeatedBosses;
+                  const allBossesDefeated =
+                    defeated.includes("footnote-giant") &&
+                    defeated.includes("misprint-seraph") &&
+                    defeated.includes("index-eater");
+                  if (allBossesDefeated) {
+                    // Auto-save final state
+                    doSave().catch(() => {});
+                    victoryTriggered = true;
+                    const state = session.getState();
+                    victoryScreen = new VictoryScreen({
+                      playerName: state.playerName,
+                      playTimeSeconds: state.totalPlayTime,
+                      deaths: state.deathCount,
+                      roomsVisited: state.visitedRooms.length,
+                      totalRooms: rooms.size,
+                      abilitiesUnlocked: state.unlockedAbilities.length,
+                      cardsCollected: state.cardDeckData?.ownedCards.length ?? 0,
+                      completionPercent: state.completionPercent,
+                    });
+                  }
+                }
               }
               hud.update(dt);
               return;
@@ -1284,6 +1333,16 @@ function PlayPageInner() {
                   originalSurfaces = roomManager.currentTileMap.platforms.map(
                     (p) => p.surfaceType ?? "normal"
                   );
+
+                  // Check if this was the final boss
+                  const defeated = session.getState().defeatedBosses;
+                  if (
+                    defeated.includes("footnote-giant") &&
+                    defeated.includes("misprint-seraph") &&
+                    defeated.includes("index-eater")
+                  ) {
+                    hud.notify("The Library is Restored — return to the Scribe Hall", "info");
+                  }
                 }
               }
             }
@@ -1616,6 +1675,11 @@ function PlayPageInner() {
                   saveNotifyFrames
                 );
               }
+            }
+
+            // Victory screen overlay (renders on top of everything)
+            if (victoryScreen) {
+              victoryScreen.render(screenCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
             }
           };
           engine.getRenderer().addLayerCallback("debug", screenLayerCallback);
