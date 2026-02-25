@@ -92,16 +92,16 @@ describe("state transitions", () => {
       h.pressRight();
       h.tickN(3);
       h.releaseAll();
-      // Wait until speed is below slideMinSpeed but still running/idle
+      // Wait until speed is fully zero so the next run frame stays below slideMinSpeed
       h.tickUntil(
-        () => Math.abs(h.vel.x) < DEFAULT_PLAYER_PARAMS.slideMinSpeed,
+        () => Math.abs(h.vel.x) === 0,
         30,
       );
 
-      // Now we might be in IDLE — press right briefly to get RUNNING then immediately crouch
+      // Now in IDLE with zero speed — press right briefly to get RUNNING then immediately crouch
       h.pressRight();
       h.tick();
-      // Now press down while speed is low
+      // Now press down while speed is low (one frame of acceleration < slideMinSpeed)
       h.pressDown();
       h.tick();
 
@@ -302,7 +302,7 @@ describe("state transitions", () => {
       // Tick through lockout frames
       h.tickN(DEFAULT_PLAYER_PARAMS.wallJumpLockoutFrames);
 
-      // Wall jump vertical speed is 340, after 8 frames of riseGravity the player should still be rising
+      // Wall jump vertical speed is 360, after 8 frames of riseGravity the player should still be rising
       expect(h.vel.y).toBeLessThan(0);
       expect(h.state).toBe("JUMPING");
     });
