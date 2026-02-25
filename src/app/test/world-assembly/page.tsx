@@ -23,7 +23,8 @@ import { DayNightRenderer } from "@/engine/world/DayNightRenderer";
 import { CorruptionModifiers } from "@/engine/world/CorruptionModifiers";
 import { GameWorld } from "@/engine/world/GameWorld";
 import type { WorldFrameState } from "@/engine/world/GameWorld";
-import { createDemoWorld } from "@/engine/world/demoWorld";
+import { createFullWorld } from "@/engine/world/demoWorld";
+import type { ValidationResult } from "@/engine/world/WorldGraph";
 import type { BiomeTheme } from "@/engine/world/Biome";
 import { GameHUD } from "@/engine/ui/GameHUD";
 import type { GameHUDConfig } from "@/engine/ui/GameHUD";
@@ -41,6 +42,7 @@ import {
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS } from "@/lib/constants";
 import type { Vec2 } from "@/lib/types";
 import type { RoomId, EnemySpawn } from "@/engine/world/Room";
+import { HealthPickupManager } from "@/engine/world/HealthPickup";
 import Link from "next/link";
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -332,6 +334,9 @@ export default function WorldAssemblyTest() {
     corruptionIntensity: 0,
   });
 
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [regionCounts, setRegionCounts] = useState<Array<{ name: string; count: number }>>([]);
+
   const hudConfigRef = useRef(hudConfig);
   hudConfigRef.current = hudConfig;
   const cycleSpeedRef = useRef(cycleSpeed);
@@ -353,14 +358,28 @@ export default function WorldAssemblyTest() {
   // ─── Engine Mount ───────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
-    RenderConfig.setMode("rectangles");
+    RenderConfig.setMode("sprites");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const input = engine.getInput();
     engineRef.current = engine;
 
-    // Build the demo world
-    const { worldGraph } = createDemoWorld();
+    // Build the full world
+    const { worldGraph } = createFullWorld();
+
+    // Validate world graph
+    const validation = worldGraph.validate();
+    setValidationResult(validation);
+    setRegionCounts(
+      worldGraph.data.regions.map((r) => ({ name: r.name, count: r.roomIds.length })),
+    );
+    if (validation.errors.length > 0) {
+      console.error("[WorldGraph] Validation errors:", validation.errors);
+    }
+    if (validation.warnings.length > 0) {
+      console.warn("[WorldGraph] Validation warnings:", validation.warnings);
+    }
+
     const gameWorld = new GameWorld({
       worldGraph,
       allAbilitiesUnlocked: true,
@@ -433,6 +452,11 @@ export default function WorldAssemblyTest() {
     );
     hud.showRoomName("Scribe Hall");
 
+    // Health pickups
+    let pickupManager = new HealthPickupManager(
+      gameWorld.roomManager.currentRoom.healthPickups ?? []
+    );
+
     // Track current obstacles
     let currentObstacles: Obstacle[] = [...gameWorld.roomManager.currentObstacles];
     refsRef.current.obstacles = currentObstacles;
@@ -473,6 +497,11 @@ export default function WorldAssemblyTest() {
       // Obstacles
       currentObstacles = [...rm.currentObstacles];
       refsRef.current.obstacles = currentObstacles;
+
+      // Health pickups
+      pickupManager = new HealthPickupManager(
+        newRoom.healthPickups ?? []
+      );
 
       minimapData = computeMinimapLayout(worldGraph);
 
@@ -642,9 +671,9 @@ export default function WorldAssemblyTest() {
       }
       pasteOver.update(dt);
 
-      if (input.isPressed(InputAction.Ability3)) indexMark.onKeyDown();
-      if (input.isHeld(InputAction.Ability3)) indexMark.onKeyHeld(input);
-      if (input.isReleased(InputAction.Ability3)) {
+      if (input.isPressed(InputAction.Ability4)) indexMark.onKeyDown();
+      if (input.isHeld(InputAction.Ability4)) indexMark.onKeyHeld(input);
+      if (input.isReleased(InputAction.Ability4)) {
         const result = indexMark.onKeyUp(playerCenter, player.grounded);
         if (result?.action === "teleport") {
           player.position.x = result.targetPosition.x - player.size.x / 2;
@@ -706,6 +735,9 @@ export default function WorldAssemblyTest() {
           }
         }
       }
+
+      // Health pickups
+      pickupManager.update(player.getBounds(), playerHealth, dt);
 
       // Knockback
       const kb = playerHealth.getKnockbackVelocity();
@@ -867,6 +899,10 @@ export default function WorldAssemblyTest() {
           }
         }
       }
+
+      // ── Health pickups ─────────────────────────────────────────
+
+      pickupManager.render(rCtx, camera, renderTime);
 
       // ── Room elements ─────────────────────────────────────────
 
@@ -1091,6 +1127,41 @@ export default function WorldAssemblyTest() {
             </div>
           </details>
 
+          {/* Validation */}
+          {validationResult && (
+            <details open={validationResult.errors.length > 0}>
+              <summary className={`text-xs font-mono uppercase tracking-wider cursor-pointer select-none pt-2 ${validationResult.errors.length > 0 ? "text-red-400/80" : "text-green-400/80"}`}>
+                Validation {validationResult.errors.length > 0 ? `(${validationResult.errors.length} errors)` : "(clean)"}
+              </summary>
+              <div className="mt-2 flex flex-col gap-0.5 text-xs font-mono">
+                <div className="text-zinc-400">
+                  Rooms: <span className="text-zinc-200">{validationResult.stats.totalRooms}</span>
+                  {" "}&middot; Exits: <span className="text-zinc-200">{validationResult.stats.totalExits}</span>
+                  {" "}&middot; Regions: <span className="text-zinc-200">{validationResult.stats.totalRegions}</span>
+                </div>
+                <div className="text-zinc-400">
+                  Bidirectional: <span className="text-green-300">{validationResult.stats.bidirectionalExits}</span>
+                  {" "}&middot; One-way: <span className={validationResult.stats.unidirectionalExits > 0 ? "text-yellow-300" : "text-zinc-200"}>{validationResult.stats.unidirectionalExits}</span>
+                  {" "}&middot; Orphaned: <span className={validationResult.stats.orphanedRooms > 0 ? "text-yellow-300" : "text-zinc-200"}>{validationResult.stats.orphanedRooms}</span>
+                </div>
+                {regionCounts.map((r) => (
+                  <div key={r.name} className="text-zinc-500">
+                    {r.name}: <span className="text-zinc-300">{r.count} rooms</span>
+                  </div>
+                ))}
+                {validationResult.errors.map((e, i) => (
+                  <div key={`err-${i}`} className="text-red-400">ERR: {e}</div>
+                ))}
+                {validationResult.warnings.slice(0, 10).map((w, i) => (
+                  <div key={`warn-${i}`} className="text-yellow-400/70">WARN: {w}</div>
+                ))}
+                {validationResult.warnings.length > 10 && (
+                  <div className="text-yellow-400/50">...and {validationResult.warnings.length - 10} more warnings</div>
+                )}
+              </div>
+            </details>
+          )}
+
           {/* Day/Night */}
           <details>
             <summary className="text-xs font-mono text-indigo-400/80 uppercase tracking-wider cursor-pointer select-none pt-2">
@@ -1166,22 +1237,17 @@ export default function WorldAssemblyTest() {
           {/* Room Map */}
           <details>
             <summary className="text-xs font-mono text-green-400/80 uppercase tracking-wider cursor-pointer select-none pt-2">
-              Room Map
+              Room Map ({debugState.totalRooms} rooms)
             </summary>
-            <div className="mt-2 flex flex-col gap-0.5 text-xs font-mono">
-              {[
-                { id: "scribe-hall", name: "Scribe Hall", exits: "→ Tutorial Corridor, → Archive Passage" },
-                { id: "tutorial-corridor", name: "Tutorial Corridor", exits: "← Scribe Hall, → Vertical Shaft" },
-                { id: "archive-passage", name: "Archive Passage", exits: "← Scribe Hall, → Vertical Shaft" },
-                { id: "vertical-shaft", name: "Vertical Shaft", exits: "← Tutorial Corridor, ↑ Vine Garden" },
-                { id: "vine-garden", name: "Vine Garden", exits: "↓ Vertical Shaft" },
-              ].map((r) => (
-                <div key={r.id} className={`${r.id === debugState.roomId ? "text-amber-300" : "text-zinc-500"}`}>
-                  {r.id === debugState.roomId ? "▸ " : "  "}
-                  {r.name}
-                  <span className="text-zinc-700 ml-1">({r.exits})</span>
+            <div className="mt-2 flex flex-col gap-1 text-xs font-mono max-h-48 overflow-y-auto">
+              {regionCounts.map((r) => (
+                <div key={r.name}>
+                  <div className="text-zinc-500">{r.name} ({r.count})</div>
                 </div>
               ))}
+              <div className="text-zinc-400 mt-1">
+                Current: <span className="text-amber-300">{debugState.roomName}</span>
+              </div>
             </div>
           </details>
 
