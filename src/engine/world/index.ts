@@ -66,6 +66,7 @@ export {
   type RoomObstacle,
   type RoomExit,
   type AbilityGate,
+  type AbilityPickup,
   type EnemySpawn,
   type RoomVineAnchor,
   type ExitDirection,
@@ -82,6 +83,7 @@ export {
   renderSpawnMarker,
   renderEnemyMarker,
   renderVineMarker,
+  renderAbilityPedestal,
 } from "./RoomRenderer";
 export { RoomEditor, type EditorTool } from "./RoomEditor";
 export { PRESET_ROOMS, PRESET_ROOM_NAMES } from "./presetRooms";
@@ -95,6 +97,8 @@ export {
 } from "./FogSystem";
 export { SCRIBE_HALL } from "./scribeHall";
 export { ARCHIVE_PASSAGE, DEMO_WORLD_DATA, createDemoWorld } from "./demoWorld";
+export { CENTRAL_ARCHIVES_ROOMS, CENTRAL_ARCHIVES_ROOM_IDS } from "./centralArchivesRooms";
+export { ABILITY_SHRINE_ROOMS, ABILITY_SHRINE_ROOM_IDS } from "./abilityShrineRooms";
 export { PlayerProgression, type PlayerProgressionData, type CardDeckData } from "./PlayerProgression";
 export { WorldGraph, type WorldRegion, type WorldGraphData } from "./WorldGraph";
 export { GameWorld, type GameWorldConfig, type WorldFrameState, type RoomTransitionResult } from "./GameWorld";

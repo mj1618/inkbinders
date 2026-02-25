@@ -61,11 +61,23 @@ export interface AbilityGate {
   opened: boolean;
 }
 
+/** Ability pickup — a pedestal where the player first unlocks an ability */
+export interface AbilityPickup {
+  /** Which ability this pedestal grants */
+  ability: GateAbility;
+  /** World-space position of the pedestal visual center */
+  position: Vec2;
+  /** Trigger zone — player overlapping this rect unlocks the ability */
+  zone: Rect;
+}
+
 /** Enemy spawn point */
 export interface EnemySpawn {
   id: string;
   position: Vec2;
-  type: "reader" | "binder" | "proofwarden";
+  type: "reader" | "binder" | "proofwarden" | "boss";
+  /** Boss identifier (e.g. "footnote-giant") — only used when type is "boss" */
+  bossId?: string;
   /** Patrol range for Reader, firing range for Binder, etc. */
   patrolRange?: number;
   /** Ground Y for simple enemy physics */
@@ -107,6 +119,13 @@ export interface RoomData {
   enemies: EnemySpawn[];
   /** Vine anchors (Herbarium Folio biome) */
   vineAnchors: RoomVineAnchor[];
+  /** Optional ability pickup — shrine pedestal */
+  abilityPickup?: AbilityPickup;
+  /** Optional boss gate — a platform that blocks progress until a boss is defeated */
+  bossGate?: {
+    bossId: string;
+    platformRect: Rect;
+  };
 }
 
 // ─── Constants ──────────────────────────────────────────────────────
