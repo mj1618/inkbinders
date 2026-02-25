@@ -21,6 +21,13 @@ const PLACEHOLDER_COLORS: Record<string, string> = {
   "bg-astral": "#1a1a4e",
   "bg-maritime": "#1a4a4a",
   "bg-gothic": "#2a1a1a",
+  "vfx-stitch": "#f59e0b",
+  "vfx-redaction": "#ef4444",
+  "vfx-paste": "#f59e0b",
+  "vfx-bookmark": "#f59e0b",
+  "vfx-teleport": "#f59e0b",
+  "vfx-index": "#f59e0b",
+  vfx: "#fbbf24",
 };
 
 function getPlaceholderColor(id: string): string {

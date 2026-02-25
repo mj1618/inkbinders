@@ -1,5 +1,9 @@
 // BiomeBackground — parallax background rendering for biome visual depth
 
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { BIOME_BACKGROUND_LAYERS } from "./BiomeBackgroundSprites";
+
 export interface BackgroundLayer {
   /** Scroll speed relative to camera (0 = fixed, 1 = moves with camera) */
   parallaxFactor: number;
@@ -47,6 +51,270 @@ function seededRandom(seed: number): () => number {
     s = (s * 16807 + 0) % 2147483647;
     return (s - 1) / 2147483646;
   };
+}
+
+// ─── Sprite layer rendering helper ──────────────────────────────────────
+
+const BG_IMAGE_WIDTH = 960;
+
+/**
+ * Render a background sprite layer, tiling horizontally for wide rooms.
+ * The caller's ctx has already been translated by (-cameraX * parallaxFactor).
+ * In that translated space, the visible screen starts at (cameraX * parallaxFactor)
+ * and extends canvasWidth pixels to the right. We tile 960px-wide images to cover it.
+ */
+function renderSpriteLayer(
+  ctx: CanvasRenderingContext2D,
+  sheetId: string,
+  cameraX: number,
+  parallaxFactor: number,
+  canvasWidth: number,
+): void {
+  const sheet = AssetManager.getInstance().getSpriteSheet(sheetId);
+  if (!sheet) return;
+
+  // In translated space, visible region starts at cameraX * parallaxFactor
+  const visibleStart = cameraX * parallaxFactor;
+  const startTile = Math.floor(visibleStart / BG_IMAGE_WIDTH);
+  const endTile = Math.ceil((visibleStart + canvasWidth) / BG_IMAGE_WIDTH);
+
+  for (let i = startTile; i <= endTile; i++) {
+    sheet.drawFrame(ctx, 0, i * BG_IMAGE_WIDTH, 0);
+  }
+}
+
+// ─── Biome background dispatch ─────────────────────────────────────────
+
+/**
+ * Create the correct parallax background for a given biome ID.
+ * Falls back to a simple dark fill if the biome is unknown.
+ */
+export function createBackgroundForBiome(
+  biomeId: string,
+  levelWidth: number,
+  levelHeight: number,
+): BiomeBackground {
+  switch (biomeId) {
+    case "scribe-hall":
+      return createScribeHallBackground(levelWidth, levelHeight);
+    case "herbarium-folio":
+      return createHerbariumBackground(levelWidth, levelHeight);
+    case "astral-atlas":
+      return createAstralAtlasBackground(levelWidth, levelHeight);
+    case "maritime-ledger":
+      return createMaritimeBackground(levelWidth, levelHeight);
+    case "gothic-errata":
+      return createGothicErrataBackground(levelWidth, levelHeight);
+    default:
+      return createDefaultBackground(levelWidth, levelHeight);
+  }
+}
+
+// ─── Default background (simple gradient fill) ─────────────────────────
+
+export function createDefaultBackground(
+  levelWidth: number,
+  levelHeight: number,
+): BiomeBackground {
+  const layers: BackgroundLayer[] = [
+    {
+      parallaxFactor: 0.1,
+      render: (ctx, cameraX) => {
+        if (RenderConfig.useSprites()) {
+          renderSpriteLayer(ctx, "bg-default-far", cameraX, 0.1, levelWidth);
+        }
+        if (RenderConfig.useRectangles()) {
+          ctx.fillStyle = "#0a0a0f";
+          ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
+        }
+      },
+    },
+  ];
+  return new BiomeBackground(layers);
+}
+
+// ─── Scribe Hall background layer generators ───────────────────────────
+
+interface BookshelfShape {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  shelves: number;
+}
+
+interface CandelabraShape {
+  x: number;
+  y: number;
+  height: number;
+  arms: number;
+}
+
+interface ScrollShape {
+  x: number;
+  y: number;
+  width: number;
+  length: number;
+  angle: number;
+}
+
+function generateBookshelves(count: number, seed: number, width: number, height: number): BookshelfShape[] {
+  const rng = seededRandom(seed);
+  const shapes: BookshelfShape[] = [];
+  for (let i = 0; i < count; i++) {
+    shapes.push({
+      x: rng() * width,
+      y: rng() * height * 0.4 + height * 0.3,
+      width: 80 + rng() * 120,
+      height: 100 + rng() * 150,
+      shelves: 3 + Math.floor(rng() * 3),
+    });
+  }
+  return shapes;
+}
+
+function generateCandelabras(count: number, seed: number, width: number, height: number): CandelabraShape[] {
+  const rng = seededRandom(seed);
+  const shapes: CandelabraShape[] = [];
+  for (let i = 0; i < count; i++) {
+    shapes.push({
+      x: rng() * width,
+      y: rng() * height * 0.5 + height * 0.2,
+      height: 40 + rng() * 60,
+      arms: 2 + Math.floor(rng() * 3),
+    });
+  }
+  return shapes;
+}
+
+function generateScrolls(count: number, seed: number, width: number, height: number): ScrollShape[] {
+  const rng = seededRandom(seed);
+  const shapes: ScrollShape[] = [];
+  for (let i = 0; i < count; i++) {
+    shapes.push({
+      x: rng() * width,
+      y: rng() * height * 0.3,
+      width: 10 + rng() * 20,
+      length: 30 + rng() * 60,
+      angle: (rng() - 0.5) * 0.3,
+    });
+  }
+  return shapes;
+}
+
+/**
+ * Create the Scribe Hall parallax background layers.
+ * Warm library aesthetic — distant bookshelves, candelabras, hanging scrolls.
+ */
+export function createScribeHallBackground(
+  levelWidth: number,
+  levelHeight: number,
+  seed: number = 33,
+): BiomeBackground {
+  const bookshelves = generateBookshelves(6, seed, levelWidth, levelHeight);
+  const candelabras = generateCandelabras(8, seed + 100, levelWidth, levelHeight);
+  const scrolls = generateScrolls(10, seed + 200, levelWidth, levelHeight);
+
+  const scribeSheetIds = BIOME_BACKGROUND_LAYERS["scribe-hall"];
+
+  const layers: BackgroundLayer[] = [
+    // Layer 1: Distant bookshelves (parallax 0.1)
+    {
+      parallaxFactor: 0.1,
+      render: (ctx, cameraX, _cameraY, canvasWidth, canvasHeight) => {
+        if (RenderConfig.useSprites() && scribeSheetIds) {
+          renderSpriteLayer(ctx, scribeSheetIds[0].sheetId, cameraX, 0.1, canvasWidth);
+        }
+        if (RenderConfig.useRectangles()) {
+          // Warm dark background
+          ctx.fillStyle = "#0f0a05";
+          ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
+
+          // Bookshelves as dark rectangles with shelf lines
+          ctx.save();
+          ctx.globalAlpha = 0.06;
+          for (const shelf of bookshelves) {
+            ctx.fillStyle = "#3d2b1a";
+            ctx.fillRect(shelf.x, shelf.y, shelf.width, shelf.height);
+            ctx.strokeStyle = "#6b4423";
+            ctx.lineWidth = 0.5;
+            const shelfHeight = shelf.height / shelf.shelves;
+            for (let s = 1; s < shelf.shelves; s++) {
+              ctx.beginPath();
+              ctx.moveTo(shelf.x, shelf.y + s * shelfHeight);
+              ctx.lineTo(shelf.x + shelf.width, shelf.y + s * shelfHeight);
+              ctx.stroke();
+            }
+          }
+          ctx.restore();
+        }
+      },
+    },
+
+    // Layer 2: Candelabras and reading desks (parallax 0.3)
+    {
+      parallaxFactor: 0.3,
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && scribeSheetIds) {
+          renderSpriteLayer(ctx, scribeSheetIds[1].sheetId, cameraX, 0.3, canvasWidth);
+        }
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          ctx.globalAlpha = 0.1;
+          for (const c of candelabras) {
+            // Stem
+            ctx.strokeStyle = "#6b4423";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(c.x, c.y);
+            ctx.lineTo(c.x, c.y - c.height);
+            ctx.stroke();
+            // Arms with flame circles
+            ctx.fillStyle = "#fbbf24";
+            const armSpacing = 12;
+            for (let a = 0; a < c.arms; a++) {
+              const ax = c.x + (a - (c.arms - 1) / 2) * armSpacing;
+              const ay = c.y - c.height;
+              ctx.beginPath();
+              ctx.arc(ax, ay - 4, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+          ctx.restore();
+        }
+      },
+    },
+
+    // Layer 3: Hanging scrolls and ink bottles (parallax 0.6)
+    {
+      parallaxFactor: 0.6,
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && scribeSheetIds) {
+          renderSpriteLayer(ctx, scribeSheetIds[2].sheetId, cameraX, 0.6, canvasWidth);
+        }
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          ctx.globalAlpha = 0.15;
+          for (const scroll of scrolls) {
+            ctx.save();
+            ctx.translate(scroll.x, scroll.y);
+            ctx.rotate(scroll.angle);
+            // Scroll body
+            ctx.fillStyle = "#d4a634";
+            ctx.fillRect(-scroll.width / 2, 0, scroll.width, scroll.length);
+            // End caps
+            ctx.fillStyle = "#6b4423";
+            ctx.fillRect(-scroll.width / 2 - 2, -2, scroll.width + 4, 4);
+            ctx.fillRect(-scroll.width / 2 - 2, scroll.length - 2, scroll.width + 4, 4);
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+      },
+    },
+  ];
+
+  return new BiomeBackground(layers);
 }
 
 // ─── Herbarium Folio background layer generators ────────────────────────
@@ -196,66 +464,83 @@ export function createHerbariumBackground(
 
   const RULED_LINE_SPACING = 40;
 
+  const herbSheetIds = BIOME_BACKGROUND_LAYERS["herbarium-folio"];
+
   const layers: BackgroundLayer[] = [
     // Layer 1: Deep background (parallax 0.1) — ruled lines + faint leaf silhouettes
     {
       parallaxFactor: 0.1,
-      render: (ctx, _cameraX, _cameraY, canvasWidth, canvasHeight) => {
-        ctx.fillStyle = "#050f08";
-        ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
-
-        // Ruled horizontal lines (like notebook paper)
-        ctx.save();
-        ctx.strokeStyle = "#0a1a0f";
-        ctx.lineWidth = 0.5;
-        ctx.globalAlpha = 0.3;
-        for (let y = 0; y < levelHeight + canvasHeight; y += RULED_LINE_SPACING) {
-          ctx.beginPath();
-          ctx.moveTo(-500, y);
-          ctx.lineTo(levelWidth + 500, y);
-          ctx.stroke();
+      render: (ctx, cameraX, _cameraY, canvasWidth, canvasHeight) => {
+        if (RenderConfig.useSprites() && herbSheetIds) {
+          renderSpriteLayer(ctx, herbSheetIds[0].sheetId, cameraX, 0.1, canvasWidth);
         }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          ctx.fillStyle = "#050f08";
+          ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
 
-        // Faint large leaf silhouettes
-        ctx.save();
-        ctx.globalAlpha = 0.04;
-        ctx.fillStyle = "#1a4a1a";
-        for (const leaf of deepLeaves) {
-          drawLeaf(ctx, leaf);
+          // Ruled horizontal lines (like notebook paper)
+          ctx.save();
+          ctx.strokeStyle = "#0a1a0f";
+          ctx.lineWidth = 0.5;
+          ctx.globalAlpha = 0.3;
+          for (let y = 0; y < levelHeight + canvasHeight; y += RULED_LINE_SPACING) {
+            ctx.beginPath();
+            ctx.moveTo(-500, y);
+            ctx.lineTo(levelWidth + 500, y);
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          // Faint large leaf silhouettes
+          ctx.save();
+          ctx.globalAlpha = 0.04;
+          ctx.fillStyle = "#1a4a1a";
+          for (const leaf of deepLeaves) {
+            drawLeaf(ctx, leaf);
+          }
+          ctx.restore();
         }
-        ctx.restore();
       },
     },
 
     // Layer 2: Mid background (parallax 0.3) — stems and small leaf outlines
     {
       parallaxFactor: 0.3,
-      render: (ctx) => {
-        ctx.save();
-        ctx.globalAlpha = 0.15;
-        ctx.strokeStyle = "#0a2a0a";
-        ctx.fillStyle = "#0a2a0a";
-        ctx.lineWidth = 1.5;
-        for (const stem of midStems) {
-          drawStem(ctx, stem);
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && herbSheetIds) {
+          renderSpriteLayer(ctx, herbSheetIds[1].sheetId, cameraX, 0.3, canvasWidth);
         }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          ctx.globalAlpha = 0.15;
+          ctx.strokeStyle = "#0a2a0a";
+          ctx.fillStyle = "#0a2a0a";
+          ctx.lineWidth = 1.5;
+          for (const stem of midStems) {
+            drawStem(ctx, stem);
+          }
+          ctx.restore();
+        }
       },
     },
 
     // Layer 3: Near background (parallax 0.6) — vine tendrils and small detailed leaves
     {
       parallaxFactor: 0.6,
-      render: (ctx) => {
-        ctx.save();
-        ctx.globalAlpha = 0.2;
-        ctx.strokeStyle = "#1a3a1a";
-        ctx.lineWidth = 1;
-        for (const tendril of nearTendrils) {
-          drawTendril(ctx, tendril);
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && herbSheetIds) {
+          renderSpriteLayer(ctx, herbSheetIds[2].sheetId, cameraX, 0.6, canvasWidth);
         }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          ctx.globalAlpha = 0.2;
+          ctx.strokeStyle = "#1a3a1a";
+          ctx.lineWidth = 1;
+          for (const tendril of nearTendrils) {
+            drawTendril(ctx, tendril);
+          }
+          ctx.restore();
+        }
       },
     },
   ];
@@ -416,94 +701,110 @@ export function createMaritimeBackground(
   const flowArrows = generateFlowArrows(20, seed + 200, levelWidth, levelHeight);
 
   const GRID_SPACING = 80;
+  const maritimeSheetIds = BIOME_BACKGROUND_LAYERS["maritime-ledger"];
 
   const layers: BackgroundLayer[] = [
     // Layer 1: Depth contour lines + lat/long grid (parallax 0.1)
     {
       parallaxFactor: 0.1,
-      render: (ctx, _cameraX, _cameraY, canvasWidth, canvasHeight) => {
-        // Deep background fill
-        ctx.fillStyle = "#060e1c";
-        ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
+      render: (ctx, cameraX, _cameraY, canvasWidth, canvasHeight) => {
+        if (RenderConfig.useSprites() && maritimeSheetIds) {
+          renderSpriteLayer(ctx, maritimeSheetIds[0].sheetId, cameraX, 0.1, canvasWidth);
+        }
+        if (RenderConfig.useRectangles()) {
+          // Deep background fill
+          ctx.fillStyle = "#060e1c";
+          ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
 
-        // Faint latitude/longitude grid
-        ctx.save();
-        ctx.strokeStyle = "#1e3a5f";
-        ctx.lineWidth = 0.5;
-        ctx.globalAlpha = 0.08;
-        for (let x = 0; x < levelWidth; x += GRID_SPACING) {
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, levelHeight);
-          ctx.stroke();
-        }
-        for (let y = 0; y < levelHeight + canvasHeight; y += GRID_SPACING) {
-          ctx.beginPath();
-          ctx.moveTo(-500, y);
-          ctx.lineTo(levelWidth + 500, y);
-          ctx.stroke();
-        }
-        ctx.restore();
+          // Faint latitude/longitude grid
+          ctx.save();
+          ctx.strokeStyle = "#1e3a5f";
+          ctx.lineWidth = 0.5;
+          ctx.globalAlpha = 0.08;
+          for (let x = 0; x < levelWidth; x += GRID_SPACING) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, levelHeight);
+            ctx.stroke();
+          }
+          for (let y = 0; y < levelHeight + canvasHeight; y += GRID_SPACING) {
+            ctx.beginPath();
+            ctx.moveTo(-500, y);
+            ctx.lineTo(levelWidth + 500, y);
+            ctx.stroke();
+          }
+          ctx.restore();
 
-        // Depth contour arcs
-        ctx.save();
-        ctx.strokeStyle = "#3b6b9b";
-        ctx.lineWidth = 0.8;
-        ctx.globalAlpha = 0.08;
-        for (const arc of contourArcs) {
-          ctx.beginPath();
-          ctx.arc(arc.cx, arc.cy, arc.radius, arc.startAngle, arc.endAngle);
-          ctx.stroke();
+          // Depth contour arcs
+          ctx.save();
+          ctx.strokeStyle = "#3b6b9b";
+          ctx.lineWidth = 0.8;
+          ctx.globalAlpha = 0.08;
+          for (const arc of contourArcs) {
+            ctx.beginPath();
+            ctx.arc(arc.cx, arc.cy, arc.radius, arc.startAngle, arc.endAngle);
+            ctx.stroke();
+          }
+          ctx.restore();
         }
-        ctx.restore();
       },
     },
 
     // Layer 2: Compass roses + navigation routes (parallax 0.3)
     {
       parallaxFactor: 0.3,
-      render: (ctx) => {
-        // Compass roses
-        ctx.save();
-        ctx.globalAlpha = 0.12;
-        ctx.fillStyle = "#fbbf24";
-        for (const rose of compassRoses) {
-          drawCompassRose(ctx, rose);
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && maritimeSheetIds) {
+          renderSpriteLayer(ctx, maritimeSheetIds[1].sheetId, cameraX, 0.3, canvasWidth);
         }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          // Compass roses
+          ctx.save();
+          ctx.globalAlpha = 0.12;
+          ctx.fillStyle = "#fbbf24";
+          for (const rose of compassRoses) {
+            drawCompassRose(ctx, rose);
+          }
+          ctx.restore();
 
-        // Navigation route dotted lines between roses
-        ctx.save();
-        ctx.strokeStyle = "#fbbf24";
-        ctx.lineWidth = 0.6;
-        ctx.globalAlpha = 0.06;
-        ctx.setLineDash([4, 8]);
-        for (let i = 0; i < compassRoses.length - 1; i++) {
-          const a = compassRoses[i];
-          const b = compassRoses[i + 1];
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
+          // Navigation route dotted lines between roses
+          ctx.save();
+          ctx.strokeStyle = "#fbbf24";
+          ctx.lineWidth = 0.6;
+          ctx.globalAlpha = 0.06;
+          ctx.setLineDash([4, 8]);
+          for (let i = 0; i < compassRoses.length - 1; i++) {
+            const a = compassRoses[i];
+            const b = compassRoses[i + 1];
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+          ctx.restore();
         }
-        ctx.setLineDash([]);
-        ctx.restore();
       },
     },
 
     // Layer 3: Current flow arrows (parallax 0.6)
     {
       parallaxFactor: 0.6,
-      render: (ctx) => {
-        ctx.save();
-        ctx.strokeStyle = "#38bdf8";
-        ctx.fillStyle = "#38bdf8";
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.2;
-        for (const arrow of flowArrows) {
-          drawFlowArrow(ctx, arrow);
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && maritimeSheetIds) {
+          renderSpriteLayer(ctx, maritimeSheetIds[2].sheetId, cameraX, 0.6, canvasWidth);
         }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          ctx.strokeStyle = "#38bdf8";
+          ctx.fillStyle = "#38bdf8";
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = 0.2;
+          for (const arrow of flowArrows) {
+            drawFlowArrow(ctx, arrow);
+          }
+          ctx.restore();
+        }
       },
     },
   ];
@@ -609,148 +910,164 @@ export function createGothicErrataBackground(
   const inkBlots = generateInkBlots(6, seed + 200, levelWidth, levelHeight);
 
   const RULED_LINE_SPACING = 35;
+  const gothicSheetIds = BIOME_BACKGROUND_LAYERS["gothic-errata"];
 
   const layers: BackgroundLayer[] = [
     // Layer 1: Faint manuscript lines + redacted blocks (parallax 0.05)
     {
       parallaxFactor: 0.05,
-      render: (ctx, _cameraX, _cameraY, canvasWidth, canvasHeight) => {
-        // Deep background fill
-        ctx.fillStyle = "#080606";
-        ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
-
-        // Ruled lines at slight random angles (torn pages)
-        ctx.save();
-        ctx.strokeStyle = "#1a1010";
-        ctx.lineWidth = 0.5;
-        ctx.globalAlpha = 0.06;
-        for (let y = 0; y < levelHeight + canvasHeight; y += RULED_LINE_SPACING) {
-          ctx.beginPath();
-          ctx.moveTo(-500, y + Math.sin(y * 0.01) * 3);
-          ctx.lineTo(levelWidth + 500, y + Math.sin(y * 0.01 + 2) * 3);
-          ctx.stroke();
+      render: (ctx, cameraX, _cameraY, canvasWidth, canvasHeight) => {
+        if (RenderConfig.useSprites() && gothicSheetIds) {
+          renderSpriteLayer(ctx, gothicSheetIds[0].sheetId, cameraX, 0.05, canvasWidth);
         }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          // Deep background fill
+          ctx.fillStyle = "#080606";
+          ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
 
-        // Redacted blocks (black rectangles with red strikethrough)
-        ctx.save();
-        ctx.globalAlpha = 0.06;
-        for (const block of redactedBlocks) {
+          // Ruled lines at slight random angles (torn pages)
           ctx.save();
-          ctx.translate(block.x + block.width / 2, block.y + block.height / 2);
-          ctx.rotate(block.angle);
-          // Black block
-          ctx.fillStyle = "#000000";
-          ctx.fillRect(-block.width / 2, -block.height / 2, block.width, block.height);
-          // Red strikethrough
-          ctx.strokeStyle = "#dc2626";
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(-block.width / 2, 0);
-          ctx.lineTo(block.width / 2, 0);
-          ctx.stroke();
+          ctx.strokeStyle = "#1a1010";
+          ctx.lineWidth = 0.5;
+          ctx.globalAlpha = 0.06;
+          for (let y = 0; y < levelHeight + canvasHeight; y += RULED_LINE_SPACING) {
+            ctx.beginPath();
+            ctx.moveTo(-500, y + Math.sin(y * 0.01) * 3);
+            ctx.lineTo(levelWidth + 500, y + Math.sin(y * 0.01 + 2) * 3);
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          // Redacted blocks (black rectangles with red strikethrough)
+          ctx.save();
+          ctx.globalAlpha = 0.06;
+          for (const block of redactedBlocks) {
+            ctx.save();
+            ctx.translate(block.x + block.width / 2, block.y + block.height / 2);
+            ctx.rotate(block.angle);
+            // Black block
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(-block.width / 2, -block.height / 2, block.width, block.height);
+            // Red strikethrough
+            ctx.strokeStyle = "#dc2626";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(-block.width / 2, 0);
+            ctx.lineTo(block.width / 2, 0);
+            ctx.stroke();
+            ctx.restore();
+          }
           ctx.restore();
         }
-        ctx.restore();
       },
     },
 
     // Layer 2: Corrupted marginalia — squiggly lines, drip marks (parallax 0.2)
     {
       parallaxFactor: 0.2,
-      render: (ctx) => {
-        ctx.save();
-        ctx.globalAlpha = 0.10;
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = 0.8;
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && gothicSheetIds) {
+          renderSpriteLayer(ctx, gothicSheetIds[1].sheetId, cameraX, 0.2, canvasWidth);
+        }
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          ctx.globalAlpha = 0.10;
+          ctx.strokeStyle = "#dc2626";
+          ctx.lineWidth = 0.8;
 
-        // Squiggly text-like lines
-        for (const line of squigglyLines) {
-          ctx.beginPath();
-          ctx.moveTo(line.x, line.y);
-          const steps = 8;
-          const stepLen = line.length / steps;
-          for (let i = 1; i <= steps; i++) {
-            const px = line.x + Math.cos(line.angle) * stepLen * i;
-            const py = line.y + Math.sin(line.angle) * stepLen * i +
-              Math.sin(i * 1.5) * line.amplitude;
-            ctx.lineTo(px, py);
+          // Squiggly text-like lines
+          for (const line of squigglyLines) {
+            ctx.beginPath();
+            ctx.moveTo(line.x, line.y);
+            const steps = 8;
+            const stepLen = line.length / steps;
+            for (let i = 1; i <= steps; i++) {
+              const px = line.x + Math.cos(line.angle) * stepLen * i;
+              const py = line.y + Math.sin(line.angle) * stepLen * i +
+                Math.sin(i * 1.5) * line.amplitude;
+              ctx.lineTo(px, py);
+            }
+            ctx.stroke();
           }
-          ctx.stroke();
-        }
 
-        // Vertical drip marks
-        ctx.strokeStyle = "#5c3a3a";
-        ctx.lineWidth = 0.6;
-        for (let i = 0; i < squigglyLines.length; i += 3) {
-          const line = squigglyLines[i];
-          ctx.beginPath();
-          ctx.moveTo(line.x, line.y);
-          ctx.lineTo(line.x + (i % 2 === 0 ? 2 : -2), line.y + 20 + i * 3);
-          ctx.stroke();
-        }
+          // Vertical drip marks
+          ctx.strokeStyle = "#5c3a3a";
+          ctx.lineWidth = 0.6;
+          for (let i = 0; i < squigglyLines.length; i += 3) {
+            const line = squigglyLines[i];
+            ctx.beginPath();
+            ctx.moveTo(line.x, line.y);
+            ctx.lineTo(line.x + (i % 2 === 0 ? 2 : -2), line.y + 20 + i * 3);
+            ctx.stroke();
+          }
 
-        // Small cross marks
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = 1;
-        for (let i = 1; i < squigglyLines.length; i += 4) {
-          const line = squigglyLines[i];
-          const sz = 4;
-          ctx.beginPath();
-          ctx.moveTo(line.x - sz, line.y - sz);
-          ctx.lineTo(line.x + sz, line.y + sz);
-          ctx.moveTo(line.x + sz, line.y - sz);
-          ctx.lineTo(line.x - sz, line.y + sz);
-          ctx.stroke();
-        }
+          // Small cross marks
+          ctx.strokeStyle = "#dc2626";
+          ctx.lineWidth = 1;
+          for (let i = 1; i < squigglyLines.length; i += 4) {
+            const line = squigglyLines[i];
+            const sz = 4;
+            ctx.beginPath();
+            ctx.moveTo(line.x - sz, line.y - sz);
+            ctx.lineTo(line.x + sz, line.y + sz);
+            ctx.moveTo(line.x + sz, line.y - sz);
+            ctx.lineTo(line.x - sz, line.y + sz);
+            ctx.stroke();
+          }
 
-        ctx.restore();
+          ctx.restore();
+        }
       },
     },
 
     // Layer 3: Torn page edges + ink blots (parallax 0.5)
     {
       parallaxFactor: 0.5,
-      render: (ctx) => {
-        ctx.save();
-        ctx.globalAlpha = 0.15;
-
-        // Jagged torn edges (vertical and horizontal)
-        ctx.strokeStyle = "#78716c";
-        ctx.lineWidth = 1;
-        const rng = seededRandom(seed + 300);
-        for (let i = 0; i < 4; i++) {
-          const startX = rng() * levelWidth;
-          const startY = rng() * levelHeight;
-          const vertical = rng() > 0.5;
-          ctx.beginPath();
-          ctx.moveTo(startX, startY);
-          for (let j = 0; j < 12; j++) {
-            const dx = vertical ? (rng() - 0.5) * 10 : 20 + rng() * 10;
-            const dy = vertical ? 20 + rng() * 10 : (rng() - 0.5) * 10;
-            ctx.lineTo(startX + dx * (j + 1) * 0.3, startY + dy * (j + 1) * 0.3);
-          }
-          ctx.stroke();
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && gothicSheetIds) {
+          renderSpriteLayer(ctx, gothicSheetIds[2].sheetId, cameraX, 0.5, canvasWidth);
         }
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          ctx.globalAlpha = 0.15;
 
-        // Ink blots (irregular dark circles)
-        ctx.fillStyle = "#1a0f0f";
-        for (const blot of inkBlots) {
-          ctx.beginPath();
-          const steps = 12;
-          for (let i = 0; i <= steps; i++) {
-            const angle = (i / steps) * Math.PI * 2;
-            const r = blot.radius * (1 + Math.sin(angle * 3) * blot.irregularity);
-            const bx = blot.x + Math.cos(angle) * r;
-            const by = blot.y + Math.sin(angle) * r;
-            if (i === 0) ctx.moveTo(bx, by);
-            else ctx.lineTo(bx, by);
+          // Jagged torn edges (vertical and horizontal)
+          ctx.strokeStyle = "#78716c";
+          ctx.lineWidth = 1;
+          const rng = seededRandom(seed + 300);
+          for (let i = 0; i < 4; i++) {
+            const startX = rng() * levelWidth;
+            const startY = rng() * levelHeight;
+            const vertical = rng() > 0.5;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            for (let j = 0; j < 12; j++) {
+              const dx = vertical ? (rng() - 0.5) * 10 : 20 + rng() * 10;
+              const dy = vertical ? 20 + rng() * 10 : (rng() - 0.5) * 10;
+              ctx.lineTo(startX + dx * (j + 1) * 0.3, startY + dy * (j + 1) * 0.3);
+            }
+            ctx.stroke();
           }
-          ctx.closePath();
-          ctx.fill();
-        }
 
-        ctx.restore();
+          // Ink blots (irregular dark circles)
+          ctx.fillStyle = "#1a0f0f";
+          for (const blot of inkBlots) {
+            ctx.beginPath();
+            const steps = 12;
+            for (let i = 0; i <= steps; i++) {
+              const angle = (i / steps) * Math.PI * 2;
+              const r = blot.radius * (1 + Math.sin(angle * 3) * blot.irregularity);
+              const bx = blot.x + Math.cos(angle) * r;
+              const by = blot.y + Math.sin(angle) * r;
+              if (i === 0) ctx.moveTo(bx, by);
+              else ctx.lineTo(bx, by);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          ctx.restore();
+        }
       },
     },
   ];
@@ -766,8 +1083,6 @@ interface Star {
   size: number;
   brightness: number;
   color: string;
-  /** Blink speed (0 = no blink) */
-  blinkSpeed: number;
 }
 
 interface ConstellationLine {
@@ -800,7 +1115,6 @@ function generateStars(
       size: 1 + rng() * 2.5,
       brightness: 0.3 + rng() * 0.7,
       color: colors[Math.floor(rng() * colors.length)],
-      blinkSpeed: rng() > 0.7 ? 0.5 + rng() * 2 : 0,
     });
   }
   return stars;
@@ -867,30 +1181,31 @@ export function createAstralAtlasBackground(
   const nebulae = generateNebulaClusters(5, seed + 200, levelWidth, levelHeight);
 
   const GRID_SPACING = 60;
+  const astralSheetIds = BIOME_BACKGROUND_LAYERS["astral-atlas"];
 
   const layers: BackgroundLayer[] = [
     // Layer 1: Deep star field (parallax 0.05)
     {
       parallaxFactor: 0.05,
-      render: (ctx, _cameraX, _cameraY, canvasWidth, canvasHeight) => {
-        // Deep background fill
-        ctx.fillStyle = "#050810";
-        ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
+      render: (ctx, cameraX, _cameraY, canvasWidth, canvasHeight) => {
+        if (RenderConfig.useSprites() && astralSheetIds) {
+          renderSpriteLayer(ctx, astralSheetIds[0].sheetId, cameraX, 0.05, canvasWidth);
+        }
+        if (RenderConfig.useRectangles()) {
+          // Deep background fill
+          ctx.fillStyle = "#050810";
+          ctx.fillRect(-500, -500, levelWidth + 1000, levelHeight + 1000);
 
-        // Stars
-        const time = Date.now() / 1000;
-        for (const star of deepStars) {
-          let alpha = star.brightness;
-          if (star.blinkSpeed > 0) {
-            alpha *= 0.5 + 0.5 * Math.sin(time * star.blinkSpeed);
+          // Stars (static — removed Date.now() blinking to avoid frame-rate-dependent rendering)
+          for (const star of deepStars) {
+            ctx.save();
+            ctx.globalAlpha = star.brightness;
+            ctx.fillStyle = star.color;
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
           }
-          ctx.save();
-          ctx.globalAlpha = alpha;
-          ctx.fillStyle = star.color;
-          ctx.beginPath();
-          ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
         }
       },
     },
@@ -898,75 +1213,85 @@ export function createAstralAtlasBackground(
     // Layer 2: Constellation lines + grid (parallax 0.15)
     {
       parallaxFactor: 0.15,
-      render: (ctx) => {
-        // Faint grid lines (celestial chart)
-        ctx.save();
-        ctx.strokeStyle = "#1e293b";
-        ctx.lineWidth = 0.5;
-        ctx.globalAlpha = 0.12;
-        for (let x = 0; x < levelWidth; x += GRID_SPACING) {
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, levelHeight);
-          ctx.stroke();
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && astralSheetIds) {
+          renderSpriteLayer(ctx, astralSheetIds[1].sheetId, cameraX, 0.15, canvasWidth);
         }
-        for (let y = 0; y < levelHeight; y += GRID_SPACING) {
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(levelWidth, y);
-          ctx.stroke();
-        }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          // Faint grid lines (celestial chart)
+          ctx.save();
+          ctx.strokeStyle = "#1e293b";
+          ctx.lineWidth = 0.5;
+          ctx.globalAlpha = 0.12;
+          for (let x = 0; x < levelWidth; x += GRID_SPACING) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, levelHeight);
+            ctx.stroke();
+          }
+          for (let y = 0; y < levelHeight; y += GRID_SPACING) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(levelWidth, y);
+            ctx.stroke();
+          }
+          ctx.restore();
 
-        // Constellation lines
-        ctx.save();
-        ctx.strokeStyle = "#475569";
-        ctx.lineWidth = 0.8;
-        ctx.globalAlpha = 0.15;
-        for (const line of constellationLines) {
-          ctx.beginPath();
-          ctx.moveTo(line.x1, line.y1);
-          ctx.lineTo(line.x2, line.y2);
-          ctx.stroke();
-        }
-        ctx.restore();
+          // Constellation lines
+          ctx.save();
+          ctx.strokeStyle = "#475569";
+          ctx.lineWidth = 0.8;
+          ctx.globalAlpha = 0.15;
+          for (const line of constellationLines) {
+            ctx.beginPath();
+            ctx.moveTo(line.x1, line.y1);
+            ctx.lineTo(line.x2, line.y2);
+            ctx.stroke();
+          }
+          ctx.restore();
 
-        // Mid-layer stars (constellation nodes)
-        ctx.save();
-        for (const star of midStars) {
-          ctx.globalAlpha = star.brightness * 0.6;
-          ctx.fillStyle = star.color;
-          ctx.beginPath();
-          ctx.arc(star.x, star.y, star.size * 1.2, 0, Math.PI * 2);
-          ctx.fill();
+          // Mid-layer stars (constellation nodes)
+          ctx.save();
+          for (const star of midStars) {
+            ctx.globalAlpha = star.brightness * 0.6;
+            ctx.fillStyle = star.color;
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size * 1.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
         }
-        ctx.restore();
       },
     },
 
     // Layer 3: Nebula clusters (parallax 0.4)
     {
       parallaxFactor: 0.4,
-      render: (ctx) => {
-        ctx.save();
-        for (const nebula of nebulae) {
-          const gradient = ctx.createRadialGradient(
-            nebula.x,
-            nebula.y,
-            0,
-            nebula.x,
-            nebula.y,
-            nebula.radius,
-          );
-          gradient.addColorStop(0, nebula.color);
-          gradient.addColorStop(1, "rgba(0,0,0,0)");
-          ctx.globalAlpha = 0.04;
-          ctx.fillStyle = gradient;
-          ctx.beginPath();
-          ctx.arc(nebula.x, nebula.y, nebula.radius, 0, Math.PI * 2);
-          ctx.fill();
+      render: (ctx, cameraX, _cameraY, canvasWidth) => {
+        if (RenderConfig.useSprites() && astralSheetIds) {
+          renderSpriteLayer(ctx, astralSheetIds[2].sheetId, cameraX, 0.4, canvasWidth);
         }
-        ctx.restore();
+        if (RenderConfig.useRectangles()) {
+          ctx.save();
+          for (const nebula of nebulae) {
+            const gradient = ctx.createRadialGradient(
+              nebula.x,
+              nebula.y,
+              0,
+              nebula.x,
+              nebula.y,
+              nebula.radius,
+            );
+            gradient.addColorStop(0, nebula.color);
+            gradient.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.globalAlpha = 0.04;
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(nebula.x, nebula.y, nebula.radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
       },
     },
   ];

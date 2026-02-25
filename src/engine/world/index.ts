@@ -19,7 +19,21 @@ export {
   BiomeBackground,
   type BackgroundLayer,
   createHerbariumBackground,
+  createMaritimeBackground,
+  createGothicErrataBackground,
+  createAstralAtlasBackground,
+  createScribeHallBackground,
+  createDefaultBackground,
+  createBackgroundForBiome,
 } from "./BiomeBackground";
+export {
+  type BackgroundLayerDef,
+  BIOME_BACKGROUND_LAYERS,
+  BIOME_BACKGROUND_CONFIGS,
+  getBiomeBackgroundConfigs,
+  getAllBiomeBackgroundConfigs,
+  preloadBiomeBackground,
+} from "./BiomeBackgroundSprites";
 export {
   DayNightCycle,
   type TimeOfDay,

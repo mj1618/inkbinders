@@ -16,6 +16,9 @@ const ai = new GoogleGenAI({ apiKey: API_KEY });
 const STYLE_PREFIX =
   "hand-inked 2D game art, clean linework, watercolor wash fill, paper grain texture, high readability, metroidvania sprite, cohesive style, no text, no background, transparent background PNG,";
 
+const BG_STYLE_PREFIX =
+  "hand-inked 2D game background art, clean linework, watercolor wash fill, paper grain texture, parallax layer, seamless horizontal tiling, no characters, no text, atmospheric depth,";
+
 interface AssetPrompt {
   id: string;
   filename: string;
@@ -290,6 +293,163 @@ const ASSET_PROMPTS: AssetPrompt[] = [
     prompt: `${STYLE_PREFIX} 2D game tileset for a dark gothic library, 4 tiles in a row: cracked stone floor tile with faint red veins, gargoyle-decorated solid block tile, iron column tile with rivets and rust, fog grate wall tile with wisps seeping through, each tile 32x32 pixels, dark charcoal gray and deep crimson and iron black and ash white tones, seamless tileable edges, game tileset, 128x32 total`,
     aspectRatio: "16:9",
   },
+  // ─── Ability VFX Sprite Sheets (10 total) ───────────────────────────
+  {
+    id: "vfx-stitch-line",
+    filename: "vfx-stitch-line-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 4 frames in a horizontal strip, each frame 64x16 pixels, glowing amber thread line pulsing, stitching two surfaces together, needle-and-thread motif, golden amber glow, game-ready, 256x16 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-stitch-needle",
+    filename: "vfx-stitch-needle-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 3 frames in a horizontal strip, each frame 32x32 pixels, sewing needle flash burst, amber glow expanding outward, activation effect, spark radiating, game-ready, 96x32 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-redaction-splat",
+    filename: "vfx-redaction-splat-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 4 frames in a horizontal strip, each frame 64x64 pixels, ink blot expanding from center, dark black ink splatter growing larger each frame, redaction censorship effect, game-ready, 256x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-redaction-drip",
+    filename: "vfx-redaction-drip-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 3 frames in a horizontal strip, each frame 16x32 pixels, black ink dripping downward, ink drop falling sequence, dark ink tones, game-ready, 48x32 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-redaction-bar",
+    filename: "vfx-redaction-bar-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 2 frames in a horizontal strip, each frame 64x16 pixels, pulsing black strike-through bar, censorship redaction line with glowing red edges, game-ready, 128x16 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-paste-glow",
+    filename: "vfx-paste-glow-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 4 frames in a horizontal strip, each frame 64x32 pixels, glowing surface pulse effect, magical warm amber glow on a platform, pulse cycle brightening and dimming, game-ready, 256x32 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-paste-swoosh",
+    filename: "vfx-paste-swoosh-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 3 frames in a horizontal strip, each frame 48x48 pixels, clipboard copy swoosh effect, magical capture swirl, paper clipboard motif, amber energy, game-ready, 144x48 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-bookmark",
+    filename: "vfx-bookmark-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of 4 bookmark ribbon tabs in a horizontal strip, colors left to right: amber, blue, green, red, pointed bottom edge, library bookmark style, each frame 16x24 pixels, game-ready, 64x24 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-teleport-flash",
+    filename: "vfx-teleport-flash-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 4 frames in a horizontal strip, each frame 64x64 pixels, teleport flash burst effect, expanding ring of light, magical warp with ink paper particles, bright amber to white, game-ready, 256x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "vfx-index-ring",
+    filename: "vfx-index-ring-sheet.png",
+    prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 4 frames in a horizontal strip, each frame 48x48 pixels, spinning selection ring, dotted circle rotating at different angles, magical targeting reticle, amber glow, game-ready, 192x48 total`,
+    aspectRatio: "16:9",
+  },
+  // ─── Parallax Background Images (15 total, 960×540 per image) ────
+  // Scribe Hall backgrounds
+  {
+    id: "bg-scribe-hall-far",
+    filename: "backgrounds/bg-scribe-hall-far.png",
+    prompt: `${BG_STYLE_PREFIX} distant bookshelves, warm amber glow, candlelight, old library, deep background, muted colors, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-scribe-hall-mid",
+    filename: "backgrounds/bg-scribe-hall-mid.png",
+    prompt: `${BG_STYLE_PREFIX} candelabras, reading desks, wooden furniture, mid-distance, warm brown tones, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-scribe-hall-near",
+    filename: "backgrounds/bg-scribe-hall-near.png",
+    prompt: `${BG_STYLE_PREFIX} hanging scrolls, ink bottles, quill pens, close foreground elements, warm gold highlights, 960x540`,
+    aspectRatio: "16:9",
+  },
+  // Herbarium Folio backgrounds
+  {
+    id: "bg-herbarium-folio-far",
+    filename: "backgrounds/bg-herbarium-folio-far.png",
+    prompt: `${BG_STYLE_PREFIX} ruled notebook lines, faint leaf silhouettes, pale parchment background, very subtle, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-herbarium-folio-mid",
+    filename: "backgrounds/bg-herbarium-folio-mid.png",
+    prompt: `${BG_STYLE_PREFIX} botanical stems and leaf outlines, pressed flower shapes, green ink on parchment, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-herbarium-folio-near",
+    filename: "backgrounds/bg-herbarium-folio-near.png",
+    prompt: `${BG_STYLE_PREFIX} vine tendrils, curling plant forms, detailed botanical foreground, rich greens, 960x540`,
+    aspectRatio: "16:9",
+  },
+  // Astral Atlas backgrounds
+  {
+    id: "bg-astral-atlas-far",
+    filename: "backgrounds/bg-astral-atlas-far.png",
+    prompt: `${BG_STYLE_PREFIX} star field, distant galaxies, deep navy blue space, silver pinpoints, cosmic depth, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-astral-atlas-mid",
+    filename: "backgrounds/bg-astral-atlas-mid.png",
+    prompt: `${BG_STYLE_PREFIX} floating constellation charts, star map diagrams, silver outlines on dark blue, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-astral-atlas-near",
+    filename: "backgrounds/bg-astral-atlas-near.png",
+    prompt: `${BG_STYLE_PREFIX} drifting astral pages, glowing star fragments, purple nebula wisps, foreground debris, 960x540`,
+    aspectRatio: "16:9",
+  },
+  // Maritime Ledger backgrounds
+  {
+    id: "bg-maritime-ledger-far",
+    filename: "backgrounds/bg-maritime-ledger-far.png",
+    prompt: `${BG_STYLE_PREFIX} distant harbor, lighthouse silhouettes, calm ocean horizon, teal and sand colors, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-maritime-ledger-mid",
+    filename: "backgrounds/bg-maritime-ledger-mid.png",
+    prompt: `${BG_STYLE_PREFIX} moored ships, rope rigging, dock structures, mid-ocean depth, nautical elements, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-maritime-ledger-near",
+    filename: "backgrounds/bg-maritime-ledger-near.png",
+    prompt: `${BG_STYLE_PREFIX} wave spray, floating cargo crates, rope coils, close-up ocean foreground, cyan highlights, 960x540`,
+    aspectRatio: "16:9",
+  },
+  // Gothic Errata backgrounds
+  {
+    id: "bg-gothic-errata-far",
+    filename: "backgrounds/bg-gothic-errata-far.png",
+    prompt: `${BG_STYLE_PREFIX} cathedral spires, dark stormy sky, distant gothic architecture, ominous silhouettes, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-gothic-errata-mid",
+    filename: "backgrounds/bg-gothic-errata-mid.png",
+    prompt: `${BG_STYLE_PREFIX} broken stained glass panels, crumbling arches, gargoyle silhouettes, crimson and gray, 960x540`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "bg-gothic-errata-near",
+    filename: "backgrounds/bg-gothic-errata-near.png",
+    prompt: `${BG_STYLE_PREFIX} drifting fog wisps, close gargoyle details, iron grates, cracked stone foreground, eerie atmosphere, 960x540`,
+    aspectRatio: "16:9",
+  },
 ];
 
 async function generateAsset(prompt: AssetPrompt): Promise<void> {
@@ -299,6 +459,12 @@ async function generateAsset(prompt: AssetPrompt): Promise<void> {
   }
 
   const outputPath = path.join(outputDir, prompt.filename);
+
+  // Ensure subdirectories exist (e.g., backgrounds/)
+  const outputFileDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputFileDir)) {
+    fs.mkdirSync(outputFileDir, { recursive: true });
+  }
 
   if (fs.existsSync(outputPath)) {
     console.log(`[skip] ${prompt.filename} already exists`);
