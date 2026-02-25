@@ -66,8 +66,12 @@ import { ABILITY_VFX_SPRITE_CONFIGS } from "@/engine/abilities/AbilitySprites";
 import { HUD_SPRITE_CONFIGS } from "@/engine/ui/HUDSprites";
 import { WORLD_OBJECT_SPRITE_CONFIGS } from "@/engine/world/WorldObjectSprites";
 import { getAllBiomeBackgroundConfigs } from "@/engine/world/BiomeBackgroundSprites";
+import { createBackgroundForBiome } from "@/engine/world/BiomeBackground";
+import type { BiomeBackground } from "@/engine/world/BiomeBackground";
+import { AmbientAtmosphere, createScribeHallAtmosphere } from "@/engine/world/AmbientAtmosphere";
 import type { LoadedGameState } from "@/engine/save/SaveSystem";
 import { useSaveSlots } from "@/hooks/useSaveSlots";
+import { loadTunedParamsFromStorage } from "@/hooks/useTunedParams";
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from "@/lib/constants";
 import type { Vec2 } from "@/lib/types";
 import { GATE_COLORS } from "@/engine/world/Room";
@@ -522,6 +526,19 @@ function PlayPageInner() {
           let originalSurfaces: string[] = [];
           let effectiveCorruption = 0;
 
+          // Biome background
+          let biomeBackground: BiomeBackground | null = createBackgroundForBiome(
+            roomManager.currentRoom.biomeId,
+            roomManager.currentRoom.width,
+            roomManager.currentRoom.height,
+          );
+
+          // Ambient atmosphere (Scribe Hall only)
+          let atmosphere: AmbientAtmosphere | null =
+            roomManager.currentRoom.biomeId === "scribe-hall"
+              ? createScribeHallAtmosphere()
+              : null;
+
           // Biome systems
           let vineSystem: VineSystem | null = null;
           let gravityWellSystem: GravityWellSystem | null = null;
@@ -631,6 +648,43 @@ function PlayPageInner() {
             }
           }
 
+          // Apply tuned params from test pages (stored in localStorage/Convex)
+          const tunedEntries = loadTunedParamsFromStorage();
+          for (const entry of tunedEntries) {
+            const o = entry.overrides;
+            switch (entry.category) {
+              case "player":
+                Object.assign(player.params, o);
+                player.size.x = player.params.playerWidth;
+                break;
+              case "combat":
+                Object.assign(combat.params, o);
+                break;
+              case "health":
+                Object.assign(playerHealth.params, o);
+                playerHealth.maxHealth = playerHealth.params.maxHealth;
+                if (!loadedState || isNew) {
+                  playerHealth.health = playerHealth.maxHealth;
+                }
+                break;
+              case "marginStitch":
+                Object.assign(marginStitch.params, o);
+                break;
+              case "redaction":
+                Object.assign(redaction.params, o);
+                break;
+              case "pasteOver":
+                Object.assign(pasteOver.params, o);
+                break;
+              case "indexMark":
+                Object.assign(indexMark.params, o);
+                break;
+              case "dayNight":
+                Object.assign(dayNight.params, o);
+                break;
+            }
+          }
+
           // Base params snapshot (before any card modifiers)
           const basePlayerParams = { ...player.params };
           const baseCombatParams = { ...combat.params };
@@ -658,6 +712,13 @@ function PlayPageInner() {
               }
             }
           }
+
+          // Challenge timer state
+          let challengeTimerActive = false;
+          let challengeTimerElapsed = 0;
+          let challengeTimerCompleted = false;
+          let challengeTimerParTime = 0;
+          const challengeBestTimes = new Map<string, number>();
 
           // Card save sync helper
           function syncCardStateToSession() {
@@ -724,7 +785,15 @@ function PlayPageInner() {
               roomManager.currentRoom.healthPickups ?? []
             );
 
-            // Rebuild biome systems for new room
+            // Rebuild biome background and systems for new room
+            biomeBackground = createBackgroundForBiome(
+              roomManager.currentRoom.biomeId,
+              roomManager.currentRoom.width,
+              roomManager.currentRoom.height,
+            );
+            atmosphere = roomManager.currentRoom.biomeId === "scribe-hall"
+              ? createScribeHallAtmosphere()
+              : null;
             buildBiomeSystems(roomManager.currentRoom);
 
             // Reset corruption state for new room
@@ -735,6 +804,15 @@ function PlayPageInner() {
 
             // Clear fog input remap when leaving a fog room
             input.setActionRemap(null);
+
+            // Reset challenge timer for new room
+            challengeTimerActive = false;
+            challengeTimerElapsed = 0;
+            challengeTimerCompleted = false;
+            const ct = roomManager.currentRoom.challengeTimer;
+            if (ct) {
+              challengeTimerParTime = ct.parTime;
+            }
           };
 
           // ─── Deck Mode Key Handling ──────────────────────────
@@ -1037,6 +1115,49 @@ function PlayPageInner() {
               }
             }
 
+            // Challenge timer update
+            const ct = roomManager.currentRoom.challengeTimer;
+            if (ct) {
+              const pb = player.getBounds();
+              const inStart = pb.x < ct.startZone.x + ct.startZone.width &&
+                              pb.x + pb.width > ct.startZone.x &&
+                              pb.y < ct.startZone.y + ct.startZone.height &&
+                              pb.y + pb.height > ct.startZone.y;
+              const inEnd = pb.x < ct.endZone.x + ct.endZone.width &&
+                            pb.x + pb.width > ct.endZone.x &&
+                            pb.y < ct.endZone.y + ct.endZone.height &&
+                            pb.y + pb.height > ct.endZone.y;
+
+              if (!challengeTimerActive && !challengeTimerCompleted && inStart) {
+                challengeTimerActive = true;
+                challengeTimerElapsed = 0;
+                hud.notify("Timer started! Go!", "info");
+              }
+
+              if (challengeTimerActive) {
+                challengeTimerElapsed += dt;
+
+                if (inEnd) {
+                  challengeTimerActive = false;
+                  challengeTimerCompleted = true;
+                  const roomId = roomManager.currentRoom.id;
+                  const best = challengeBestTimes.get(roomId);
+                  if (!best || challengeTimerElapsed < best) {
+                    challengeBestTimes.set(roomId, challengeTimerElapsed);
+                    hud.notify(
+                      `Challenge Complete! ${challengeTimerElapsed.toFixed(1)}s — New Best!`,
+                      "item"
+                    );
+                  } else {
+                    hud.notify(
+                      `Challenge Complete! ${challengeTimerElapsed.toFixed(1)}s (Best: ${best.toFixed(1)}s)`,
+                      "info"
+                    );
+                  }
+                }
+              }
+            }
+
             // Check ability pickups
             const pickup = roomManager.currentRoom.abilityPickup;
             if (pickup && !session.hasAbility(pickup.ability)) {
@@ -1136,6 +1257,12 @@ function PlayPageInner() {
               playerHealth.takeDamage(1, { x: 0, y: -0.3 }, "fall");
               session.recordDeath();
               input.setActionRemap(null);
+
+              if (roomManager.currentRoom.challengeTimer) {
+                challengeTimerActive = false;
+                challengeTimerElapsed = 0;
+                challengeTimerCompleted = false;
+              }
             }
 
             // Camera follow — track swing position when on vine
@@ -1579,6 +1706,17 @@ function PlayPageInner() {
             camera.position.x += shakeOffset.offsetX;
             camera.position.y += shakeOffset.offsetY;
 
+            // Atmosphere update
+            if (atmosphere) {
+              atmosphere.update(
+                dt,
+                camera.position.x - CANVAS_WIDTH / 2,
+                camera.position.y - CANVAS_HEIGHT / 2,
+                CANVAS_WIDTH,
+                CANVAS_HEIGHT,
+              );
+            }
+
             // HUD update
             hud.update(dt);
           });
@@ -1587,6 +1725,28 @@ function PlayPageInner() {
 
           engine.onRender((renderer) => {
             const rCtx = renderer.getContext();
+
+            // Background layers (screen space — behind everything)
+            if (biomeBackground) {
+              renderer.resetCamera();
+              biomeBackground.renderBackground(
+                rCtx,
+                camera.position.x - CANVAS_WIDTH / 2,
+                camera.position.y - CANVAS_HEIGHT / 2,
+                CANVAS_WIDTH,
+                CANVAS_HEIGHT,
+              );
+
+              // Atmosphere: light shafts + candle glow (screen space — behind platforms, in front of background)
+              if (atmosphere) {
+                const camX = camera.position.x - CANVAS_WIDTH / 2;
+                const camY = camera.position.y - CANVAS_HEIGHT / 2;
+                atmosphere.renderLightShafts(rCtx, camX, camY);
+                atmosphere.renderCandleGlow(rCtx, camX, camY);
+              }
+
+              renderer.applyCamera(camera);
+            }
 
             // TileMap
             roomManager.currentTileMap.render(renderer);
@@ -1686,6 +1846,22 @@ function PlayPageInner() {
             // Exit indicators
             renderExitIndicators(rCtx, roomManager.currentRoom.exits, time);
 
+            // Challenge room zone indicators
+            if (roomManager.currentRoom.challengeTimer) {
+              const ctDef = roomManager.currentRoom.challengeTimer;
+              rCtx.strokeStyle = challengeTimerActive ? "rgba(34,197,94,0.2)" : "rgba(34,197,94,0.5)";
+              rCtx.lineWidth = 2;
+              rCtx.strokeRect(ctDef.startZone.x, ctDef.startZone.y, ctDef.startZone.width, ctDef.startZone.height);
+              if (!challengeTimerActive && !challengeTimerCompleted) {
+                rCtx.fillStyle = "rgba(34,197,94,0.1)";
+                rCtx.fillRect(ctDef.startZone.x, ctDef.startZone.y, ctDef.startZone.width, ctDef.startZone.height);
+              }
+              rCtx.strokeStyle = "rgba(251,191,36,0.5)";
+              rCtx.strokeRect(ctDef.endZone.x, ctDef.endZone.y, ctDef.endZone.width, ctDef.endZone.height);
+              rCtx.fillStyle = "rgba(251,191,36,0.1)";
+              rCtx.fillRect(ctDef.endZone.x, ctDef.endZone.y, ctDef.endZone.width, ctDef.endZone.height);
+            }
+
             // Biome system world-space rendering
             if (vineSystem) {
               const pc: Vec2 | null = vineSystem.isSwinging
@@ -1762,6 +1938,27 @@ function PlayPageInner() {
                 renderPlayer();
               }
             }
+
+            // Foreground layers + dust motes (screen space — rendered over the player, before HUD)
+            if (biomeBackground) {
+              renderer.resetCamera();
+
+              // Atmosphere: dust motes (screen space — in front of player, between player and foreground layers)
+              if (atmosphere) {
+                const camX = camera.position.x - CANVAS_WIDTH / 2;
+                const camY = camera.position.y - CANVAS_HEIGHT / 2;
+                atmosphere.renderDustMotes(rCtx, camX, camY);
+              }
+
+              biomeBackground.renderForeground(
+                rCtx,
+                camera.position.x - CANVAS_WIDTH / 2,
+                camera.position.y - CANVAS_HEIGHT / 2,
+                CANVAS_WIDTH,
+                CANVAS_HEIGHT,
+              );
+              renderer.applyCamera(camera);
+            }
           });
 
           // ─── Screen-Space Layer (HUD + Pause) ────────────────
@@ -1822,6 +2019,44 @@ function PlayPageInner() {
 
             // HUD (always visible)
             hud.render(screenCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Challenge timer HUD
+            if (roomManager.currentRoom.challengeTimer) {
+              screenCtx.save();
+              const timerX = CANVAS_WIDTH / 2;
+              const timerY = 40;
+
+              if (challengeTimerActive) {
+                screenCtx.font = "bold 28px monospace";
+                screenCtx.textAlign = "center";
+                const timeStr = challengeTimerElapsed.toFixed(1) + "s";
+                const parStr = `Par: ${challengeTimerParTime}s`;
+                const over = challengeTimerElapsed > challengeTimerParTime;
+                screenCtx.fillStyle = over ? "#ef4444" : "#22d3ee";
+                screenCtx.fillText(timeStr, timerX, timerY);
+                screenCtx.font = "14px monospace";
+                screenCtx.fillStyle = "rgba(255,255,255,0.5)";
+                screenCtx.fillText(parStr, timerX, timerY + 22);
+              } else if (challengeTimerCompleted) {
+                screenCtx.font = "bold 24px monospace";
+                screenCtx.textAlign = "center";
+                screenCtx.fillStyle = challengeTimerElapsed <= challengeTimerParTime ? "#4ade80" : "#fbbf24";
+                screenCtx.fillText(`${challengeTimerElapsed.toFixed(1)}s`, timerX, timerY);
+                const best = challengeBestTimes.get(roomManager.currentRoom.id);
+                if (best !== undefined) {
+                  screenCtx.font = "12px monospace";
+                  screenCtx.fillStyle = "rgba(255,255,255,0.4)";
+                  screenCtx.fillText(`Best: ${best.toFixed(1)}s`, timerX, timerY + 18);
+                }
+              } else {
+                screenCtx.font = "14px monospace";
+                screenCtx.textAlign = "center";
+                screenCtx.fillStyle = "rgba(255,255,255,0.3)";
+                screenCtx.fillText("Step into the start zone to begin", timerX, timerY);
+              }
+
+              screenCtx.restore();
+            }
 
             // Mini equipped cards bar (during gameplay)
             if (!deckMode && !paused) {

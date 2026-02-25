@@ -333,3 +333,23 @@ The class should work fine in tests if callers simply don't call `render*()` met
 
 - `npx tsc --noEmit` — passes (0 errors)
 - `npm run test:run` — 427 tests pass across 16 files, no regressions
+
+---
+
+## Review Pass 2 (Agent 8c58654f)
+
+### Issues Found & Fixed
+
+1. **Double camera transform on atmosphere renders in play page** — The prior review (Agent 60e79378) fixed the same bug in the environment-showcase page but missed it in `src/app/play/page.tsx`. The atmosphere `renderLightShafts`, `renderCandleGlow`, and `renderDustMotes` methods manually subtract camera coordinates, so they expect screen-space rendering. But in the play page, they were called after `renderer.applyCamera(camera)` (world-space), causing the camera offset to be applied twice. Fixed by moving atmosphere render calls into the existing screen-space blocks:
+   - Light shafts + candle glow: moved inside the background screen-space block (between `biomeBackground.renderBackground()` and `renderer.applyCamera(camera)`)
+   - Dust motes: moved inside the foreground screen-space block (between `renderer.resetCamera()` and `biomeBackground.renderForeground()`)
+
+### No Other Issues Found
+
+- `AmbientAtmosphere.ts`: Thoroughly reviewed — particle lifecycle math, parallax application, canvas state management all correct.
+- Factory config values match the task spec exactly.
+
+### Verification
+
+- `npx tsc --noEmit` — passes (0 errors)
+- `npm run test:run` — 427 tests pass across 16 files, no regressions
