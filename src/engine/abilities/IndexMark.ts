@@ -2,6 +2,11 @@ import type { Vec2 } from "@/lib/types";
 import type { Camera } from "@/engine/core/Camera";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { InputAction, InputManager } from "@/engine/input/InputManager";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import type { SpriteSheet } from "@/engine/core/SpriteSheet";
+import { ABILITY_VFX_ANIMATIONS } from "./AbilitySprites";
 
 // ─── Data Structures ───────────────────────────────────────────────
 
@@ -100,6 +105,13 @@ export class IndexMark {
 
   /** Timestamp counter (incremented each frame for mark age tracking) */
   private frameTimestamp = 0;
+
+  /** Sprite VFX (lazy-initialized) */
+  private bookmarkSheet: SpriteSheet | null = null;
+  private teleportFlashAnim: AnimationController | null = null;
+  private teleportOutAnim: AnimationController | null = null;
+  private ringAnim: AnimationController | null = null;
+  private spritesInitialized = false;
 
   constructor(params?: Partial<IndexMarkParams>) {
     this.params = { ...DEFAULT_INDEX_MARK_PARAMS, ...params };
@@ -265,6 +277,14 @@ export class IndexMark {
     this.teleportState.visualActive = true;
     this.teleportState.visualTimer = this.params.teleportVisualDuration;
     this.teleportState.teleportOrigin = null; // Will be set by caller
+
+    // Trigger teleport flash sprites
+    if (this.teleportFlashAnim) {
+      this.teleportFlashAnim.restart("teleport-in");
+    }
+    if (this.teleportOutAnim) {
+      this.teleportOutAnim.restart("teleport-out");
+    }
     this.teleportState.teleportDestination = {
       x: mark.position.x,
       y: mark.position.y,
@@ -387,6 +407,37 @@ export class IndexMark {
     }
   }
 
+  /** Lazy-initialize sprite VFX controllers from AssetManager */
+  private initSprites(): void {
+    if (this.spritesInitialized) return;
+    this.spritesInitialized = true;
+
+    const am = AssetManager.getInstance();
+
+    this.bookmarkSheet = am.getSpriteSheet("vfx-bookmark") ?? null;
+
+    const flashSheet = am.getSpriteSheet("vfx-teleport-flash");
+    if (flashSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-teleport-flash"];
+      if (anims) {
+        for (const anim of anims) flashSheet.addAnimation(anim);
+      }
+      this.teleportFlashAnim = new AnimationController(flashSheet);
+      // Create a separate controller for teleport-out (origin)
+      this.teleportOutAnim = new AnimationController(flashSheet);
+    }
+
+    const ringSheet = am.getSpriteSheet("vfx-index-ring");
+    if (ringSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-index-ring"];
+      if (anims) {
+        for (const anim of anims) ringSheet.addAnimation(anim);
+      }
+      this.ringAnim = new AnimationController(ringSheet);
+      this.ringAnim.play("spin");
+    }
+  }
+
   /**
    * Render all marks, teleport selection UI, and teleport visual effects.
    * Call during world-space render (with camera transform applied).
@@ -394,29 +445,73 @@ export class IndexMark {
   render(ctx: CanvasRenderingContext2D): void {
     if (!this.params.enabled) return;
 
+    this.initSprites();
+
+    const dt = 1 / 60; // Fixed timestep
     const pulse = Math.sin(this.pulseTimer * 3) * 0.15 + 0.55;
 
-    // Draw teleport trail during visual
-    if (
-      this.teleportState.visualActive &&
-      this.teleportState.teleportOrigin &&
-      this.teleportState.teleportDestination
-    ) {
-      this.renderTeleportTrail(ctx);
+    // ── Sprite VFX layer (drawn underneath canvas VFX) ──
+    if (RenderConfig.useSprites()) {
+      // Bookmark sprites at mark positions
+      if (this.bookmarkSheet) {
+        for (const mark of this.marks) {
+          // Frame index matches color: 0=amber, 1=blue, 2=green, 3=red
+          this.bookmarkSheet.drawFrame(
+            ctx,
+            mark.colorIndex,
+            mark.position.x,
+            mark.position.y - 24,
+          );
+        }
+      }
+
+      // Teleport flash at destination + origin
+      if (this.teleportState.visualActive) {
+        if (this.teleportFlashAnim && this.teleportState.teleportDestination) {
+          this.teleportFlashAnim.update(dt);
+          const dest = this.teleportState.teleportDestination;
+          this.teleportFlashAnim.draw(ctx, dest.x - 32, dest.y - 32);
+        }
+        if (this.teleportOutAnim && this.teleportState.teleportOrigin) {
+          this.teleportOutAnim.update(dt);
+          const origin = this.teleportState.teleportOrigin;
+          this.teleportOutAnim.draw(ctx, origin.x - 32, origin.y - 32);
+        }
+      }
+
+      // Selection ring around targeted mark
+      if (this.ringAnim && this.teleportState.selecting && this.marks.length > 0) {
+        this.ringAnim.update(dt);
+        const idx = Math.min(this.teleportState.selectedIndex, this.marks.length - 1);
+        const mark = this.marks[idx];
+        this.ringAnim.draw(ctx, mark.position.x + 4 - 24, mark.position.y - 8 - 24);
+      }
     }
 
-    // Draw all placed marks
-    for (let i = 0; i < this.marks.length; i++) {
-      const mark = this.marks[i];
-      const isSelected =
-        this.teleportState.selecting &&
-        i === this.teleportState.selectedIndex;
-      this.renderMark(ctx, mark, i, isSelected, pulse);
-    }
+    // ── Canvas VFX layer (functional elements — drawn in rectangles and both modes) ──
+    if (RenderConfig.useRectangles()) {
+      // Draw teleport trail during visual
+      if (
+        this.teleportState.visualActive &&
+        this.teleportState.teleportOrigin &&
+        this.teleportState.teleportDestination
+      ) {
+        this.renderTeleportTrail(ctx);
+      }
 
-    // Draw selection beam during teleport selection
-    if (this.teleportState.selecting && this.marks.length > 0) {
-      // The beam is rendered in the test page since it needs the player position
+      // Draw all placed marks
+      for (let i = 0; i < this.marks.length; i++) {
+        const mark = this.marks[i];
+        const isSelected =
+          this.teleportState.selecting &&
+          i === this.teleportState.selectedIndex;
+        this.renderMark(ctx, mark, i, isSelected, pulse);
+      }
+
+      // Draw selection beam during teleport selection
+      if (this.teleportState.selecting && this.marks.length > 0) {
+        // The beam is rendered in the test page since it needs the player position
+      }
     }
   }
 

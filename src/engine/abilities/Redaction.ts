@@ -4,6 +4,10 @@ import { TileMap } from "@/engine/physics/TileMap";
 import type { Obstacle } from "@/engine/physics/Obstacles";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { aabbOverlap } from "@/engine/physics/AABB";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import { ABILITY_VFX_ANIMATIONS } from "./AbilitySprites";
 
 // ─── Data Structures ───────────────────────────────────────────────
 
@@ -99,6 +103,12 @@ export class Redaction {
 
   /** Internal pulse timer for animations */
   private pulseTimer = 0;
+
+  /** Sprite VFX animation controllers (lazy-initialized) */
+  private splatAnim: AnimationController | null = null;
+  private dripAnim: AnimationController | null = null;
+  private barAnim: AnimationController | null = null;
+  private spritesInitialized = false;
 
   constructor(params?: Partial<RedactionParams>) {
     this.params = { ...DEFAULT_REDACTION_PARAMS, ...params };
@@ -314,6 +324,44 @@ export class Redaction {
     return corrected;
   }
 
+  /** Lazy-initialize sprite VFX controllers from AssetManager */
+  private initSprites(): void {
+    if (this.spritesInitialized) return;
+    this.spritesInitialized = true;
+
+    const am = AssetManager.getInstance();
+
+    const splatSheet = am.getSpriteSheet("vfx-redaction-splat");
+    if (splatSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-redaction-splat"];
+      if (anims) {
+        for (const anim of anims) splatSheet.addAnimation(anim);
+      }
+      this.splatAnim = new AnimationController(splatSheet);
+      this.splatAnim.play("splat-expand");
+    }
+
+    const dripSheet = am.getSpriteSheet("vfx-redaction-drip");
+    if (dripSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-redaction-drip"];
+      if (anims) {
+        for (const anim of anims) dripSheet.addAnimation(anim);
+      }
+      this.dripAnim = new AnimationController(dripSheet);
+      this.dripAnim.play("drip");
+    }
+
+    const barSheet = am.getSpriteSheet("vfx-redaction-bar");
+    if (barSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-redaction-bar"];
+      if (anims) {
+        for (const anim of anims) barSheet.addAnimation(anim);
+      }
+      this.barAnim = new AnimationController(barSheet);
+      this.barAnim.play("bar-pulse");
+    }
+  }
+
   /**
    * Render redaction visuals in world/camera space.
    * Call during the world-layer render pass.
@@ -321,17 +369,63 @@ export class Redaction {
   render(ctx: CanvasRenderingContext2D): void {
     if (!this.params.enabled) return;
 
+    this.initSprites();
+
+    const dt = 1 / 60; // Fixed timestep
     const pulse = Math.sin(this.pulseTimer * 4) * 0.15 + 0.85;
 
-    // Render targeting outlines on all detected obstacles
-    for (const target of this.detectedObstacles) {
-      const isTargeted = target === this.targetedObstacle;
-      this.renderTargetOutline(ctx, target.obstacle.rect, isTargeted, pulse);
+    // ── Sprite VFX layer (drawn underneath canvas VFX) ──
+    if (RenderConfig.useSprites()) {
+      // Update shared animation controllers once per frame (not per-redaction)
+      if (this.splatAnim) this.splatAnim.update(dt);
+      if (this.barAnim) this.barAnim.update(dt);
+      if (this.dripAnim) this.dripAnim.update(dt);
+
+      for (const ar of this.activeRedactions) {
+        const rect = ar.obstacle.rect;
+        const cx = rect.x + rect.width / 2;
+        const cy = rect.y + rect.height / 2;
+
+        if (ar.visualProgress < 1 && this.splatAnim) {
+          // Expanding splat during activation
+          const scaleX = (rect.width / 64) * ar.visualProgress;
+          const scaleY = (rect.height / 64) * ar.visualProgress;
+          this.splatAnim.draw(ctx, cx - (rect.width * ar.visualProgress) / 2, cy - (rect.height * ar.visualProgress) / 2, false, scaleX, scaleY);
+        } else if (ar.visualProgress >= 1) {
+          // Bar pulse tiled across obstacle width
+          if (this.barAnim) {
+            const barScaleY = rect.height / 16;
+            for (let x = rect.x; x < rect.x + rect.width; x += 64) {
+              const tileW = Math.min(64, rect.x + rect.width - x);
+              const scaleX = tileW / 64;
+              this.barAnim.draw(ctx, x, rect.y, false, scaleX, barScaleY);
+            }
+          }
+
+          // Drip sprites along bottom edge
+          if (this.dripAnim) {
+            const dripCount = Math.max(1, Math.floor(rect.width / 32));
+            for (let i = 0; i < dripCount; i++) {
+              const dx = rect.x + (i + 0.5) * (rect.width / dripCount) - 8;
+              this.dripAnim.draw(ctx, dx, rect.y + rect.height - 4);
+            }
+          }
+        }
+      }
     }
 
-    // Render active redaction marks
-    for (const ar of this.activeRedactions) {
-      this.renderActiveRedaction(ctx, ar);
+    // ── Canvas VFX layer (functional elements — drawn in rectangles and both modes) ──
+    if (RenderConfig.useRectangles()) {
+      // Render targeting outlines on all detected obstacles
+      for (const target of this.detectedObstacles) {
+        const isTargeted = target === this.targetedObstacle;
+        this.renderTargetOutline(ctx, target.obstacle.rect, isTargeted, pulse);
+      }
+
+      // Render active redaction marks
+      for (const ar of this.activeRedactions) {
+        this.renderActiveRedaction(ctx, ar);
+      }
     }
   }
 

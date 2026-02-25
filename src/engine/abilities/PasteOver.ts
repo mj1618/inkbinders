@@ -6,6 +6,10 @@ import type { Camera } from "@/engine/core/Camera";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { SurfaceType } from "@/engine/physics/Surfaces";
 import { getSurfaceProps, SURFACE_PROPERTIES } from "@/engine/physics/Surfaces";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import { ABILITY_VFX_ANIMATIONS } from "./AbilitySprites";
 
 // ─── Data Structures ───────────────────────────────────────────────
 
@@ -84,6 +88,13 @@ export class PasteOver {
 
   /** Whether the clipboard just changed (for flash animation) */
   clipboardFlashTimer = 0;
+
+  /** Sprite VFX animation controllers (lazy-initialized) */
+  private glowAnim: AnimationController | null = null;
+  private swooshAnim: AnimationController | null = null;
+  private swooshActive = false;
+  private swooshPosition: Vec2 = { x: 0, y: 0 };
+  private spritesInitialized = false;
 
   constructor(params?: Partial<PasteOverParams>) {
     this.params = { ...DEFAULT_PASTE_OVER_PARAMS, ...params };
@@ -234,6 +245,42 @@ export class PasteOver {
     }
   }
 
+  /** Lazy-initialize sprite VFX controllers from AssetManager */
+  private initSprites(): void {
+    if (this.spritesInitialized) return;
+    this.spritesInitialized = true;
+
+    const am = AssetManager.getInstance();
+
+    const glowSheet = am.getSpriteSheet("vfx-paste-glow");
+    if (glowSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-paste-glow"];
+      if (anims) {
+        for (const anim of anims) glowSheet.addAnimation(anim);
+      }
+      this.glowAnim = new AnimationController(glowSheet);
+      this.glowAnim.play("surface-pulse");
+    }
+
+    const swooshSheet = am.getSpriteSheet("vfx-paste-swoosh");
+    if (swooshSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-paste-swoosh"];
+      if (anims) {
+        for (const anim of anims) swooshSheet.addAnimation(anim);
+      }
+      this.swooshAnim = new AnimationController(swooshSheet);
+    }
+  }
+
+  /** Trigger copy swoosh VFX at a world position (call from test page on clipboard capture) */
+  triggerCopySwoosh(worldPos: Vec2): void {
+    if (this.swooshAnim) {
+      this.swooshAnim.restart("copy-swoosh");
+      this.swooshActive = true;
+      this.swooshPosition = { x: worldPos.x, y: worldPos.y };
+    }
+  }
+
   /**
    * Render paste-over visuals in world space.
    * Call during the render pass (in camera space).
@@ -241,14 +288,44 @@ export class PasteOver {
   render(ctx: CanvasRenderingContext2D, _camera?: Camera): void {
     if (!this.params.enabled) return;
 
-    // Render targeting visuals
-    if (this.targetPlatform && this.clipboard && this.canActivate) {
-      this.renderTargetHighlight(ctx, this.targetPlatform);
+    this.initSprites();
+
+    const dt = 1 / 60; // Fixed timestep
+
+    // ── Sprite VFX layer (drawn underneath canvas VFX) ──
+    if (RenderConfig.useSprites()) {
+      // Surface glow pulse on active pasted platforms
+      if (this.glowAnim) {
+        this.glowAnim.update(dt);
+        for (const paste of this.activePastes) {
+          const platform = paste.platform;
+          const scaleX = platform.width / 64;
+          const scaleY = platform.height / 32;
+          this.glowAnim.draw(ctx, platform.x, platform.y, false, scaleX, scaleY);
+        }
+      }
+
+      // Copy swoosh at capture position
+      if (this.swooshAnim && this.swooshActive) {
+        this.swooshAnim.update(dt);
+        this.swooshAnim.draw(ctx, this.swooshPosition.x - 24, this.swooshPosition.y - 24);
+        if (this.swooshAnim.isFinished()) {
+          this.swooshActive = false;
+        }
+      }
     }
 
-    // Render active paste-over timer bars and effects
-    for (const paste of this.activePastes) {
-      this.renderActivePaste(ctx, paste);
+    // ── Canvas VFX layer (functional elements — drawn in rectangles and both modes) ──
+    if (RenderConfig.useRectangles()) {
+      // Render targeting visuals
+      if (this.targetPlatform && this.clipboard && this.canActivate) {
+        this.renderTargetHighlight(ctx, this.targetPlatform);
+      }
+
+      // Render active paste-over timer bars and effects
+      for (const paste of this.activePastes) {
+        this.renderActivePaste(ctx, paste);
+      }
     }
   }
 

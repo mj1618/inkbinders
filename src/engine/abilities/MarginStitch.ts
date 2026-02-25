@@ -5,6 +5,10 @@ import type { Renderer } from "@/engine/core/Renderer";
 import type { Camera } from "@/engine/core/Camera";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { aabbOverlap } from "@/engine/physics/AABB";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import { ABILITY_VFX_ANIMATIONS } from "./AbilitySprites";
 
 // ─── Data Structures ───────────────────────────────────────────────
 
@@ -127,6 +131,12 @@ export class MarginStitch {
 
   /** Player width used for gap validation */
   private playerWidth = 24;
+
+  /** Sprite VFX animation controllers (lazy-initialized) */
+  private stitchLineAnim: AnimationController | null = null;
+  private needleFlashAnim: AnimationController | null = null;
+  private needleFlashActive = false;
+  private spritesInitialized = false;
 
   constructor(params?: Partial<MarginStitchParams>) {
     this.params = { ...DEFAULT_MARGIN_STITCH_PARAMS, ...params };
@@ -302,6 +312,12 @@ export class MarginStitch {
     // Emit opening particles
     this.emitOpeningParticles(passageRect);
 
+    // Trigger needle flash sprite VFX
+    if (this.needleFlashAnim) {
+      this.needleFlashAnim.restart("needle-flash");
+      this.needleFlashActive = true;
+    }
+
     return true;
   }
 
@@ -340,6 +356,32 @@ export class MarginStitch {
     }
   }
 
+  /** Lazy-initialize sprite VFX controllers from AssetManager */
+  private initSprites(): void {
+    if (this.spritesInitialized) return;
+    this.spritesInitialized = true;
+
+    const am = AssetManager.getInstance();
+    const lineSheet = am.getSpriteSheet("vfx-stitch-line");
+    if (lineSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-stitch-line"];
+      if (anims) {
+        for (const anim of anims) lineSheet.addAnimation(anim);
+      }
+      this.stitchLineAnim = new AnimationController(lineSheet);
+      this.stitchLineAnim.play("stitch-pulse");
+    }
+
+    const needleSheet = am.getSpriteSheet("vfx-stitch-needle");
+    if (needleSheet) {
+      const anims = ABILITY_VFX_ANIMATIONS["vfx-stitch-needle"];
+      if (anims) {
+        for (const anim of anims) needleSheet.addAnimation(anim);
+      }
+      this.needleFlashAnim = new AnimationController(needleSheet);
+    }
+  }
+
   /**
    * Render stitch visuals: targeting highlights, active passage, timer.
    * Call during the render pass (in world/camera space).
@@ -347,15 +389,48 @@ export class MarginStitch {
   render(ctx: CanvasRenderingContext2D, _camera?: Camera): void {
     if (!this.params.enabled) return;
 
-    // Render detected pairs as targeting highlights
-    for (const pair of this.detectedPairs) {
-      const isTargeted = pair === this.targetedPair;
-      this.renderTargetingVisuals(ctx, pair, isTargeted);
+    this.initSprites();
+
+    const dt = 1 / 60; // Fixed timestep
+
+    // ── Sprite VFX layer (drawn underneath canvas VFX) ──
+    if (RenderConfig.useSprites() && this.activeStitch?.isOpen) {
+      const rect = this.activeStitch.passageRect;
+
+      // Stitch-line pulse sprite stretched across passage
+      if (this.stitchLineAnim) {
+        this.stitchLineAnim.update(dt);
+        const scaleX = rect.width / 64;
+        const scaleY = rect.height / 16;
+        this.stitchLineAnim.draw(ctx, rect.x, rect.y, false, scaleX, scaleY);
+      }
+
+      // Needle flash at wall endpoints on activation
+      if (this.needleFlashAnim && this.needleFlashActive) {
+        this.needleFlashAnim.update(dt);
+        const midY = rect.y + rect.height / 2 - 16;
+        // Flash at left wall
+        this.needleFlashAnim.draw(ctx, rect.x - 16, midY);
+        // Flash at right wall
+        this.needleFlashAnim.draw(ctx, rect.x + rect.width - 16, midY);
+        if (this.needleFlashAnim.isFinished()) {
+          this.needleFlashActive = false;
+        }
+      }
     }
 
-    // Render active stitch
-    if (this.activeStitch?.isOpen) {
-      this.renderActiveStitch(ctx, this.activeStitch);
+    // ── Canvas VFX layer (functional elements — drawn in rectangles and both modes) ──
+    if (RenderConfig.useRectangles()) {
+      // Render detected pairs as targeting highlights
+      for (const pair of this.detectedPairs) {
+        const isTargeted = pair === this.targetedPair;
+        this.renderTargetingVisuals(ctx, pair, isTargeted);
+      }
+
+      // Render active stitch
+      if (this.activeStitch?.isOpen) {
+        this.renderActiveStitch(ctx, this.activeStitch);
+      }
     }
   }
 
