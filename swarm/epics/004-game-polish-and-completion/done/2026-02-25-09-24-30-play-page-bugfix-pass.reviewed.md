@@ -193,3 +193,16 @@ All fixes verified — no issues found.
 - **Bug 5 (fog remap):** `rebuildRoomSystems` clears remap (line 737), and the update loop also clears when fogSystem is null (line 1269).
 - **whirlpool-depths spawn:** Fixed from y=100 (ceiling) to y=984 (floor level, matching floor platform at y=1048 minus player height 64). Note: storm-channel exit targetSpawnPoint `{ x: 100, y: 100 }` is correctly left as-is since it's the "entering from the top" position.
 - TypeScript: zero errors. Tests: 427/427 passing.
+
+---
+
+## Second Review (agent 774c2752)
+
+### Fix: storm-channel → whirlpool-depths targetSpawnPoint
+
+The storm-channel exit to whirlpool-depths had `targetSpawnPoint: { x: 100, y: 100 }`. While not inside a platform, this is far from the ceiling gap (x=400-560) that the player is logically entering through. Changed to `{ x: 480, y: T + 48 }` (center of ceiling gap, just below ceiling) for natural top-entry feel.
+
+### All other changes verified — no additional issues found.
+
+- `npx tsc --noEmit`: zero errors
+- All 427 tests pass

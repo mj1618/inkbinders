@@ -44,7 +44,7 @@ const HARBOR_APPROACH: RoomData = {
       id: "ml_spikes_ha_1",
       rect: { x: 780, y: 540 - T - T, width: 240, height: T },
       type: "spikes",
-      damage: 15,
+      damage: 1,
       solid: false,
     },
   ],
@@ -309,6 +309,14 @@ const CARGO_HOLD: RoomData = {
       type: "jet",
     },
   ],
+  healthPickups: [
+    { id: "ch_hp_1", position: { x: 850, y: 680 }, healAmount: 1 },
+  ],
+  cardDrop: {
+    definitionId: "spear-verse",
+    tier: 1,
+    position: { x: 900, y: 330 },
+  },
 };
 
 // ─── Room 5: Storm Channel (1920×540) — Gust Gauntlet ───────────────
@@ -347,28 +355,28 @@ const STORM_CHANNEL: RoomData = {
       id: "ml_spikes_sc_1",
       rect: { x: 280, y: 540 - T - T, width: 120, height: T },
       type: "spikes",
-      damage: 15,
+      damage: 1,
       solid: false,
     },
     {
       id: "ml_spikes_sc_2",
       rect: { x: 600, y: 540 - T - T, width: 150, height: T },
       type: "spikes",
-      damage: 15,
+      damage: 1,
       solid: false,
     },
     {
       id: "ml_spikes_sc_3",
       rect: { x: 950, y: 540 - T - T, width: 150, height: T },
       type: "spikes",
-      damage: 15,
+      damage: 1,
       solid: false,
     },
     {
       id: "ml_spikes_sc_4",
       rect: { x: 1300, y: 540 - T - T, width: 200, height: T },
       type: "spikes",
-      damage: 15,
+      damage: 1,
       solid: false,
     },
   ],
@@ -385,7 +393,7 @@ const STORM_CHANNEL: RoomData = {
       direction: "bottom",
       zone: { x: 880, y: 540 - EXIT_ZONE_DEPTH, width: 160, height: EXIT_ZONE_DEPTH },
       targetRoomId: "whirlpool-depths",
-      targetSpawnPoint: { x: 100, y: 100 },
+      targetSpawnPoint: { x: 480, y: T + 48 },
     },
   ],
   gates: [
@@ -469,6 +477,9 @@ const STORM_CHANNEL: RoomData = {
       gustOffset: 0.5,
     },
   ],
+  healthPickups: [
+    { id: "sc_hp_1", position: { x: 760, y: 240 }, healAmount: 1 },
+  ],
 };
 
 // ─── Room 6: Whirlpool Depths (1440×1080) — Double Whirlpool Puzzle ──
@@ -479,7 +490,7 @@ const WHIRLPOOL_DEPTHS: RoomData = {
   width: 1440,
   height: 1080,
   biomeId: "maritime-ledger",
-  defaultSpawn: { x: 100, y: 100 },
+  defaultSpawn: { x: 100, y: 1080 - 64 - T },
   platforms: [
     // Floor segments (islands around whirlpools)
     { x: 0, y: 1080 - T, width: 400, height: T },
@@ -690,6 +701,9 @@ const LIGHTHOUSE_TOWER: RoomData = {
       gustOffDuration: 2.5,
       gustOffset: 2.0,
     },
+  ],
+  healthPickups: [
+    { id: "lt_hp_1", position: { x: 500, y: 420 }, healAmount: 1 },
   ],
 };
 
