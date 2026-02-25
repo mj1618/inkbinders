@@ -7,7 +7,7 @@ import { AssetManager } from "@/engine/core/AssetManager";
 import type { SpriteSheet } from "@/engine/core/SpriteSheet";
 import type { SurfaceType } from "./Surfaces";
 import { getSurfaceProps } from "./Surfaces";
-import { BIOME_TILE_SHEET, getTileFrame, SURFACE_TINT } from "@/engine/world/TileSprites";
+import { BIOME_TILE_SHEET, getTileFrame, getExpandedTileFrame, SURFACE_TINT } from "@/engine/world/TileSprites";
 
 export interface Platform {
   x: number;
@@ -20,6 +20,8 @@ export interface Platform {
   originalSurfaceType?: SurfaceType;
   /** Whether this platform currently has a pasted surface (temporary override) */
   isPastedOver?: boolean;
+  /** Hint for expanded tileset rendering (biome-specific decoration) */
+  tileHint?: string;
 }
 
 export interface CollisionResult {
@@ -264,10 +266,21 @@ export class TileMap {
 
       if (RenderConfig.useSprites()) {
         const sheetId = BIOME_TILE_SHEET[this.biomeId] ?? BIOME_TILE_SHEET["default"];
-        const sheet = AssetManager.getInstance().getSpriteSheet(sheetId);
+        let sheet = AssetManager.getInstance().getSpriteSheet(sheetId);
+
+        // Fallback: if expanded tileset not loaded, try the base sheet
+        if (!sheet && sheetId.endsWith("-expanded")) {
+          const baseId = sheetId.replace("-expanded", "");
+          sheet = AssetManager.getInstance().getSpriteSheet(baseId);
+        }
+
         if (sheet) {
-          const frame = getTileFrame(p.width, p.height);
-          this.renderTileSprite(ctx, p, sheet, frame);
+          if (sheet.config.id.endsWith("-expanded") && sheet.config.totalFrames >= 16) {
+            this.renderExpandedTileSprite(ctx, p, sheet);
+          } else {
+            const frame = getTileFrame(p.width, p.height);
+            this.renderTileSprite(ctx, p, sheet, frame);
+          }
           this.renderSurfaceTint(ctx, p);
         } else {
           this.renderRectangle(renderer, p);
@@ -320,6 +333,37 @@ export class TileMap {
         spriteSheet.drawFrame(
           ctx,
           frameIndex,
+          platform.x + col * tileW,
+          platform.y + row * tileH,
+        );
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /** Render a platform using per-tile frame selection from the expanded tileset */
+  private renderExpandedTileSprite(
+    ctx: CanvasRenderingContext2D,
+    platform: Platform,
+    spriteSheet: SpriteSheet,
+  ): void {
+    const tileW = 32;
+    const tileH = 32;
+    const cols = Math.ceil(platform.width / tileW);
+    const rows = Math.ceil(platform.height / tileH);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(platform.x, platform.y, platform.width, platform.height);
+    ctx.clip();
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const frame = getExpandedTileFrame(platform, col, row, cols, rows);
+        spriteSheet.drawFrame(
+          ctx,
+          frame,
           platform.x + col * tileW,
           platform.y + row * tileH,
         );
