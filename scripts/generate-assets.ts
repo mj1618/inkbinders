@@ -79,6 +79,87 @@ const ASSET_PROMPTS: AssetPrompt[] = [
     prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character performing an ink snap attack, 3 frames side by side: hand raised with gathering ink energy, snap gesture with ink burst radiating outward, fade out with ink droplets scattering, each frame 64x64 pixels, warm parchment and dark violet tones, game sprite sheet, 192x64 total`,
     aspectRatio: "16:9",
   },
+  // Reader sprite sheets (4 total, 48×48 frames)
+  {
+    id: "reader-idle",
+    filename: "reader-idle-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small frantic book creature called a Reader, 2 frames side by side, idle pose with pages fluttering nervously, hunched posture with visible spine ridges, each frame 48x48 pixels, red and dark parchment tones, game sprite sheet, 96x48 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "reader-rush",
+    filename: "reader-rush-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small frantic book creature called a Reader rushing forward, 4 frames side by side, scrambling run with pages flying off, limbs flailing, speed lines, each frame 48x48 pixels, red and dark parchment tones, game sprite sheet, 192x48 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "reader-hit",
+    filename: "reader-hit-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small book creature called a Reader getting hit, 2 frames side by side: recoil with pages scattering, dazed with stars, each frame 48x48 pixels, red and parchment tones, game sprite sheet, 96x48 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "reader-death",
+    filename: "reader-death-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small book creature called a Reader dying, 3 frames side by side: crumpling inward, pages exploding outward, pile of loose pages on ground, each frame 48x48 pixels, red fading to gray tones, game sprite sheet, 144x48 total`,
+    aspectRatio: "16:9",
+  },
+  // Binder sprite sheets (4 total, 64×64 frames)
+  {
+    id: "binder-idle",
+    filename: "binder-idle-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a hunched thread-caster creature called a Binder, 2 frames side by side, idle weaving pose with glowing threads between hands, robed figure with thread tendrils, each frame 64x64 pixels, purple and dark ink tones, game sprite sheet, 128x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "binder-grapple",
+    filename: "binder-grapple-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a thread-caster creature called a Binder shooting and retracting a thread, 5 frames in a row: arm extending with thread launching forward, thread stretching out, thread taut at full extension, thread pulling back with tension, arm retracted with thread coiled, each frame 64x64 pixels, purple and glowing thread tones, game sprite sheet, 320x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "binder-hit",
+    filename: "binder-hit-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a robed thread-caster creature getting hit, 2 frames side by side: flinch with threads snapping, recoil with arms raised, each frame 64x64 pixels, purple and parchment tones, game sprite sheet, 128x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "binder-death",
+    filename: "binder-death-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a robed thread-caster creature dying, 3 frames side by side: collapsing with threads unraveling, dissolving into loose threads, pile of tangled threads on ground, each frame 64x64 pixels, purple fading to gray, game sprite sheet, 192x64 total`,
+    aspectRatio: "16:9",
+  },
+  // Proofwarden sprite sheets (5 total, 64×64 frames)
+  {
+    id: "proofwarden-idle",
+    filename: "proofwarden-idle-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of an armored sentinel creature called a Proofwarden, 2 frames side by side, imposing stance with glowing shield in one hand, ink-etched armor with proofreading marks, each frame 64x64 pixels, blue and iron gray tones, game sprite sheet, 128x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "proofwarden-shield",
+    filename: "proofwarden-shield-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of an armored sentinel raising and losing its shield, 5 frames in a row: shield raised with bright glow, shield at full power with energy aura, shield cracking with sparks, shield shattering with fragments, shield gone with staggered pose, each frame 64x64 pixels, blue glow to dim gray transition, game sprite sheet, 320x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "proofwarden-attack",
+    filename: "proofwarden-attack-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of an armored sentinel doing a ground slam attack, 3 frames in a row: winding up with fist raised high, slamming down with shockwave ring, impact with ground crack lines radiating outward, each frame 64x64 pixels, blue and iron tones with impact yellow, game sprite sheet, 192x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "proofwarden-hit",
+    filename: "proofwarden-hit-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of an armored sentinel getting hit, 2 frames side by side: armor sparking on impact, staggering backward, each frame 64x64 pixels, blue and iron gray tones, game sprite sheet, 128x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "proofwarden-death",
+    filename: "proofwarden-death-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of an armored sentinel dying, 3 frames side by side: armor cracking and falling off, collapsing to knees with ink leaking, crumpled armor pile on ground, each frame 64x64 pixels, iron gray fading to black, game sprite sheet, 192x64 total`,
+    aspectRatio: "16:9",
+  },
   // Tile sets
   {
     id: "tiles-scribe-hall",

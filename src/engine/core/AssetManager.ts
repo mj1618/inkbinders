@@ -4,6 +4,9 @@ import type { SpriteSheetConfig } from "./SpriteSheet";
 /** Colors used for placeholder sprites by asset ID prefix */
 const PLACEHOLDER_COLORS: Record<string, string> = {
   player: "#f472b6",
+  reader: "#ef4444",
+  binder: "#a855f7",
+  proofwarden: "#3b82f6",
   tiles: "#8b7355",
 };
 

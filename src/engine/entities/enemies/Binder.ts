@@ -1,11 +1,17 @@
 import { Enemy } from "@/engine/entities/Enemy";
 import type { EnemyConfig } from "@/engine/entities/Enemy";
 import { StateMachine } from "@/engine/states/StateMachine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import type { Renderer } from "@/engine/core/Renderer";
 import type { Vec2, Rect } from "@/lib/types";
 import { aabbOverlap } from "@/engine/physics/AABB";
 import type { BinderParams } from "./EnemyParams";
 import { DEFAULT_BINDER_PARAMS } from "./EnemyParams";
+import {
+  getEnemySpriteConfigs,
+  getEnemyAnimations,
+  BINDER_STATE_TO_ANIMATION,
+} from "./EnemySprites";
 
 const BINDER_COLOR = "#a855f7";
 const BINDER_SIZE: Vec2 = { x: 28, y: 36 };
@@ -63,6 +69,12 @@ export class Binder extends Enemy {
     this.stateMachine = new StateMachine<Binder>(this);
     this.registerStates();
     this.stateMachine.setState("IDLE");
+
+    this.initSprites(
+      getEnemySpriteConfigs("binder"),
+      getEnemyAnimations("binder"),
+      BINDER_STATE_TO_ANIMATION,
+    );
   }
 
   private registerStates(): void {
@@ -286,6 +298,7 @@ export class Binder extends Enemy {
     // Clear one-frame flag after test page has had a chance to read it
     this.threadJustConnected = false;
     this.updateBase(dt);
+    this.updateAnimation(dt);
   }
 
   override render(renderer: Renderer, interpolation: number): void {
@@ -332,10 +345,15 @@ export class Binder extends Enemy {
 
     // Body with idle bob/pulse
     if (this.isAlive && state === "IDLE") {
-      const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
-      const w = this.size.x * this.idleScaleX;
-      const xOffset = (this.size.x - w) / 2;
-      renderer.fillRect(pos.x + xOffset, pos.y, w, this.size.y, bodyColor);
+      if (RenderConfig.useSprites()) {
+        this.renderSpriteBody(ctx, pos);
+      }
+      if (RenderConfig.useRectangles()) {
+        const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
+        const w = this.size.x * this.idleScaleX;
+        const xOffset = (this.size.x - w) / 2;
+        renderer.fillRect(pos.x + xOffset, pos.y, w, this.size.y, bodyColor);
+      }
 
       // Health bar and state label
       const barWidth = this.size.x + 8;

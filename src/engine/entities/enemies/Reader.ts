@@ -1,10 +1,16 @@
 import { Enemy } from "@/engine/entities/Enemy";
 import type { EnemyConfig } from "@/engine/entities/Enemy";
 import { StateMachine } from "@/engine/states/StateMachine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import type { Renderer } from "@/engine/core/Renderer";
 import type { Vec2 } from "@/lib/types";
 import type { ReaderParams } from "./EnemyParams";
 import { DEFAULT_READER_PARAMS } from "./EnemyParams";
+import {
+  getEnemySpriteConfigs,
+  getEnemyAnimations,
+  READER_STATE_TO_ANIMATION,
+} from "./EnemySprites";
 
 const READER_COLOR = "#ef4444";
 const READER_SIZE: Vec2 = { x: 20, y: 24 };
@@ -58,6 +64,12 @@ export class Reader extends Enemy {
     this.stateMachine = new StateMachine<Reader>(this);
     this.registerStates();
     this.stateMachine.setState("PATROL");
+
+    this.initSprites(
+      getEnemySpriteConfigs("reader"),
+      getEnemyAnimations("reader"),
+      READER_STATE_TO_ANIMATION,
+    );
   }
 
   private registerStates(): void {
@@ -227,12 +239,15 @@ export class Reader extends Enemy {
         this.afterimages.splice(i, 1);
       }
     }
+
+    this.updateAnimation(dt);
   }
 
   override render(renderer: Renderer, interpolation: number): void {
-    // Draw afterimages
-    if (this.isAlive) {
-      const ctx = renderer.getContext();
+    const ctx = renderer.getContext();
+
+    // Draw afterimages (rectangle-mode only)
+    if (this.isAlive && RenderConfig.useRectangles()) {
       for (const img of this.afterimages) {
         ctx.globalAlpha = img.alpha;
         renderer.fillRect(img.x, img.y, this.size.x, this.size.y, READER_COLOR);
@@ -245,30 +260,39 @@ export class Reader extends Enemy {
 
     // Bob animation during patrol — render manually so the bob offset is visible
     if (this.isAlive && state === "PATROL" && this.patrol) {
-      pos.y += Math.sin(this.bobTimer) * 2;
-      const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
-      renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
-      this.renderHealthBar(renderer, pos);
+      const bobPos = { x: pos.x, y: pos.y + Math.sin(this.bobTimer) * 2 };
+
+      if (RenderConfig.useSprites()) {
+        this.renderSpriteBody(ctx, bobPos);
+      }
+      if (RenderConfig.useRectangles()) {
+        const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
+        renderer.fillRect(bobPos.x, bobPos.y, this.size.x, this.size.y, bodyColor);
+      }
+      this.renderHealthBar(renderer, bobPos);
       return;
     }
 
-    // Chase tilt effect (slight visual only)
+    // Chase tilt effect (rectangle-mode only — sprites don't tilt)
     if (this.isAlive && state === "CHASE") {
-      // Render with slight tilt (using save/restore transform)
-      const ctx = renderer.getContext();
-      const cx = pos.x + this.size.x / 2;
-      const cy = pos.y + this.size.y / 2;
-      const tiltAngle = this.facingRight ? 0.15 : -0.15;
+      if (RenderConfig.useSprites()) {
+        this.renderSpriteBody(ctx, pos);
+      }
+      if (RenderConfig.useRectangles()) {
+        const cx = pos.x + this.size.x / 2;
+        const cy = pos.y + this.size.y / 2;
+        const tiltAngle = this.facingRight ? 0.15 : -0.15;
 
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(tiltAngle);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(tiltAngle);
 
-      const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
-      ctx.fillStyle = bodyColor;
-      ctx.fillRect(-this.size.x / 2, -this.size.y / 2, this.size.x, this.size.y);
+        const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(-this.size.x / 2, -this.size.y / 2, this.size.x, this.size.y);
 
-      ctx.restore();
+        ctx.restore();
+      }
 
       // Health bar and state label (non-tilted)
       this.renderHealthBar(renderer, pos);

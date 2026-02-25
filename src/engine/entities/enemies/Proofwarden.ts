@@ -1,10 +1,16 @@
 import { Enemy } from "@/engine/entities/Enemy";
 import type { EnemyConfig } from "@/engine/entities/Enemy";
 import { StateMachine } from "@/engine/states/StateMachine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import type { Renderer } from "@/engine/core/Renderer";
 import type { Vec2, Rect } from "@/lib/types";
 import type { ProofwardenParams } from "./EnemyParams";
 import { DEFAULT_PROOFWARDEN_PARAMS } from "./EnemyParams";
+import {
+  getEnemySpriteConfigs,
+  getEnemyAnimations,
+  PROOFWARDEN_STATE_TO_ANIMATION,
+} from "./EnemySprites";
 
 const PROOFWARDEN_COLOR = "#f59e0b";
 const PROOFWARDEN_DIM_COLOR = "#d97706";
@@ -57,6 +63,12 @@ export class Proofwarden extends Enemy {
     this.stateMachine = new StateMachine<Proofwarden>(this);
     this.registerStates();
     this.stateMachine.setState("PATROL");
+
+    this.initSprites(
+      getEnemySpriteConfigs("proofwarden"),
+      getEnemyAnimations("proofwarden"),
+      PROOFWARDEN_STATE_TO_ANIMATION,
+    );
   }
 
   private registerStates(): void {
@@ -296,6 +308,7 @@ export class Proofwarden extends Enemy {
 
   override update(dt: number): void {
     this.updateBase(dt);
+    this.updateAnimation(dt);
   }
 
   override render(renderer: Renderer, interpolation: number): void {
@@ -312,22 +325,27 @@ export class Proofwarden extends Enemy {
       ctx.globalAlpha = this.respawnFadeIn;
     }
 
-    // Body with scale
-    const bodyColor = this.hitFlashTimer > 0
-      ? "#ffffff"
-      : state === "SLAM_RECOVERY"
-        ? PROOFWARDEN_DIM_COLOR
-        : this.color;
+    // Body rendering
+    if (RenderConfig.useSprites()) {
+      this.renderSpriteBody(ctx, pos);
+    }
+    if (RenderConfig.useRectangles()) {
+      const bodyColor = this.hitFlashTimer > 0
+        ? "#ffffff"
+        : state === "SLAM_RECOVERY"
+          ? PROOFWARDEN_DIM_COLOR
+          : this.color;
 
-    const h = this.size.y * this.bodyScaleY;
-    const yOffset = this.size.y - h;
-    renderer.fillRect(pos.x, pos.y + yOffset, this.size.x, h, bodyColor);
+      const h = this.size.y * this.bodyScaleY;
+      const yOffset = this.size.y - h;
+      renderer.fillRect(pos.x, pos.y + yOffset, this.size.x, h, bodyColor);
 
-    // Hitstop glow
-    if (this.hitstopTimer > 0) {
-      ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(pos.x - 1, pos.y + yOffset - 1, this.size.x + 2, h + 2);
+      // Hitstop glow
+      if (this.hitstopTimer > 0) {
+        ctx.strokeStyle = "#fbbf24";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(pos.x - 1, pos.y + yOffset - 1, this.size.x + 2, h + 2);
+      }
     }
 
     // Shield arc

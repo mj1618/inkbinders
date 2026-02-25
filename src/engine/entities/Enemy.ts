@@ -4,6 +4,9 @@ import type { TileMap } from "@/engine/physics/TileMap";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { ScreenShake } from "@/engine/core/ScreenShake";
 import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
+import type { SpriteSheetConfig, AnimationDef } from "@/engine/core/SpriteSheet";
 import type { Damageable } from "@/engine/combat/types";
 import type { Renderer } from "@/engine/core/Renderer";
 import type { Vec2, Rect } from "@/lib/types";
@@ -81,6 +84,12 @@ export abstract class Enemy extends Entity implements Damageable {
   // --- AI toggle ---
   aiEnabled = true;
 
+  // --- Sprite Animation ---
+  protected animControllers = new Map<string, AnimationController>();
+  protected activeAnimController: AnimationController | null = null;
+  protected spritesReady = false;
+  protected stateToAnimation: Record<string, { sheetId: string; animName: string }> = {};
+
   constructor(config: EnemyConfig) {
     super({
       position: { x: config.position.x, y: config.position.y },
@@ -94,6 +103,67 @@ export abstract class Enemy extends Entity implements Damageable {
     this.spawnPosition = { x: config.position.x, y: config.position.y };
     this.respawns = config.respawns;
     this.respawnDelay = config.respawnDelay;
+  }
+
+  /** Load sprite sheets and create animation controllers (async — sprites load in background) */
+  protected initSprites(
+    configs: SpriteSheetConfig[],
+    animations: Record<string, AnimationDef[]>,
+    stateToAnim: Record<string, { sheetId: string; animName: string }>,
+  ): void {
+    this.stateToAnimation = stateToAnim;
+    const assetManager = AssetManager.getInstance();
+    assetManager.loadAll(configs).then(() => {
+      for (const config of configs) {
+        const sheet = assetManager.getSpriteSheet(config.id);
+        if (sheet) {
+          const anims = animations[config.id];
+          if (anims) {
+            for (const anim of anims) {
+              sheet.addAnimation(anim);
+            }
+          }
+          this.animControllers.set(config.id, new AnimationController(sheet));
+        }
+      }
+      this.spritesReady = true;
+    }).catch(() => {
+      // Sprite loading failed (e.g., headless test environment without DOM Image)
+      // Enemy falls back to rectangle rendering gracefully
+    });
+  }
+
+  /** Update active animation controller based on current state machine state */
+  protected updateAnimation(dt: number): void {
+    if (!this.spritesReady) return;
+    // Freeze animation during hitstop to match the visual freeze
+    if (this.hitstopTimer > 0) return;
+    const state = this.stateMachine.getCurrentState();
+    const mapping = this.stateToAnimation[state];
+    if (mapping) {
+      const controller = this.animControllers.get(mapping.sheetId);
+      if (controller) {
+        this.activeAnimController = controller;
+        controller.play(mapping.animName);
+        controller.update(dt);
+      }
+    }
+  }
+
+  /** Draw the sprite body at the given position (used by subclass render methods) */
+  protected renderSpriteBody(ctx: CanvasRenderingContext2D, pos: Vec2): void {
+    if (!this.spritesReady || !this.activeAnimController) return;
+    const sheet = this.activeAnimController.getSpriteSheet();
+    if (!sheet.isLoaded()) return;
+
+    const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
+    const spriteOffsetY = sheet.config.frameHeight - this.size.y;
+    this.activeAnimController.draw(
+      ctx,
+      pos.x - spriteOffsetX,
+      pos.y - spriteOffsetY,
+      !this.facingRight,
+    );
   }
 
   canBeDamaged(): boolean {
@@ -251,17 +321,24 @@ export abstract class Enemy extends Entity implements Damageable {
     const pos = this.getInterpolatedPosition(interpolation);
 
     if (!this.isAlive) {
-      // Death shrink animation
+      // Death animation
       if (this.deathProgress < 1) {
-        const scale = 1 - this.deathProgress;
         const alpha = 1 - this.deathProgress;
         const ctx = renderer.getContext();
         ctx.globalAlpha = alpha;
-        const w = this.size.x * scale;
-        const h = this.size.y * scale;
-        const dx = (this.size.x - w) / 2;
-        const dy = this.size.y - h;
-        renderer.fillRect(pos.x + dx, pos.y + dy, w, h, this.color);
+
+        if (RenderConfig.useSprites() && this.spritesReady && this.activeAnimController) {
+          this.renderSpriteBody(ctx, pos);
+        }
+        if (RenderConfig.useRectangles()) {
+          const scale = 1 - this.deathProgress;
+          const w = this.size.x * scale;
+          const h = this.size.y * scale;
+          const dx = (this.size.x - w) / 2;
+          const dy = this.size.y - h;
+          renderer.fillRect(pos.x + dx, pos.y + dy, w, h, this.color);
+        }
+
         ctx.globalAlpha = 1;
       }
       return;
@@ -276,11 +353,11 @@ export abstract class Enemy extends Entity implements Damageable {
 
     // Body color (white flash on hit)
     const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
-    // TODO: sprite rendering for enemies (Task 3 — enemy sprite sheets)
+
+    if (RenderConfig.useSprites() && this.spritesReady && this.activeAnimController) {
+      this.renderSpriteBody(ctx, pos);
+    }
     if (RenderConfig.useRectangles()) {
-      renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
-    } else if (RenderConfig.getMode() === "sprites") {
-      // No enemy sprites yet — draw rectangles as fallback
       renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
     }
 
