@@ -354,6 +354,138 @@ const ASSET_PROMPTS: AssetPrompt[] = [
     prompt: `${STYLE_PREFIX} ability VFX sprite sheet, 4 frames in a horizontal strip, each frame 48x48 pixels, spinning selection ring, dotted circle rotating at different angles, magical targeting reticle, amber glow, game-ready, 192x48 total`,
     aspectRatio: "16:9",
   },
+  // ─── Combat VFX Sprite Sheets (5 total) ────────────────────────────
+  {
+    id: "combat-spear-slash",
+    filename: "combat-spear-slash.png",
+    prompt: `${STYLE_PREFIX} combat VFX sprite sheet, 3 frames in a horizontal strip, each frame 96x96 pixels, sword slash arc VFX, glowing blue ink sweep, frame 1: thin arc starting, frame 2: full crescent sweep, frame 3: fading trail with ink droplets, blue ink brush stroke aesthetic, game-ready, 288x96 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "combat-snap-burst",
+    filename: "combat-snap-burst.png",
+    prompt: `${STYLE_PREFIX} combat VFX sprite sheet, 3 frames in a horizontal strip, each frame 64x64 pixels, magic burst VFX, dark indigo ink explosion, frame 1: small center point, frame 2: expanding ring with ink droplets, frame 3: large dissipating ring, game-ready, 192x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "combat-hit-flash",
+    filename: "combat-hit-flash.png",
+    prompt: `${STYLE_PREFIX} combat VFX sprite sheet, 3 frames in a horizontal strip, each frame 48x48 pixels, impact flash VFX, white-gold star burst, frame 1: bright center flash, frame 2: radiating points, frame 3: fading sparkle, game-ready, 144x48 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "combat-hit-sparks",
+    filename: "combat-hit-sparks.png",
+    prompt: `${STYLE_PREFIX} combat VFX sprite sheet, 2 frames in a horizontal strip, each frame 32x32 pixels, hit spark particles VFX, small ink droplets scattering outward, frame 1: tight cluster, frame 2: scattered spread, game-ready, 64x32 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "combat-hitstop-flash",
+    filename: "combat-hitstop-flash.png",
+    prompt: `${STYLE_PREFIX} single frame, white silhouette flash overlay for hitstop freeze frame effect, pure white filled rounded rectangle shape with soft glow edges, 64x64 pixels, game-ready`,
+  },
+  // ─── HUD & UI Sprites (20 total) ─────────────────────────────────
+  // HUD Icons
+  {
+    id: "hud-health-heart",
+    filename: "hud-health-heart.png",
+    prompt: `${STYLE_PREFIX} 3-frame horizontal sprite strip, pixel-art heart icons for health HUD, frame 1: full red heart with ink outline, frame 2: half heart left half filled, frame 3: empty heart outline only, 16x16 pixels per frame, transparent background, 48x16 total image`,
+  },
+  {
+    id: "hud-ability-stitch",
+    filename: "hud-ability-stitch.png",
+    prompt: `${STYLE_PREFIX} single icon, margin stitch ability, two parallel pages with glowing cyan thread stitching between them, 32x32 pixels, transparent background, cyan and white color palette`,
+  },
+  {
+    id: "hud-ability-redaction",
+    filename: "hud-ability-redaction.png",
+    prompt: `${STYLE_PREFIX} single icon, redaction ability, black ink rectangle with red strike-through X mark, dripping ink edges, 32x32 pixels, transparent background, black and red color palette`,
+  },
+  {
+    id: "hud-ability-paste",
+    filename: "hud-ability-paste.png",
+    prompt: `${STYLE_PREFIX} single icon, paste-over ability, glowing stamp or paintbrush pressing onto a surface, amber orange glow, 32x32 pixels, transparent background, amber and gold color palette`,
+  },
+  {
+    id: "hud-ability-index",
+    filename: "hud-ability-index.png",
+    prompt: `${STYLE_PREFIX} single icon, index mark ability, ornate bookmark ribbon with purple glow, pin waypoint marker shape, 32x32 pixels, transparent background, purple and lavender color palette`,
+  },
+  {
+    id: "hud-weapon-spear",
+    filename: "hud-weapon-spear.png",
+    prompt: `${STYLE_PREFIX} single icon, quill spear weapon, elegant writing quill with sharp pointed nib angled diagonally, blue ink glow, 32x32 pixels, transparent background, blue color palette`,
+  },
+  {
+    id: "hud-weapon-snap",
+    filename: "hud-weapon-snap.png",
+    prompt: `${STYLE_PREFIX} single icon, ink snap weapon, starburst explosion of dark ink droplets radiating outward, 6 rays, indigo glow, 32x32 pixels, transparent background, indigo color palette`,
+  },
+  {
+    id: "hud-sun",
+    filename: "hud-sun.png",
+    prompt: `${STYLE_PREFIX} single icon, sun for daytime, warm glowing sun with 8 short rays, amber gold watercolor, 16x16 pixels, transparent background`,
+  },
+  {
+    id: "hud-moon",
+    filename: "hud-moon.png",
+    prompt: `${STYLE_PREFIX} single icon, crescent moon for nighttime, elegant thin crescent with soft indigo glow, 16x16 pixels, transparent background`,
+  },
+  // Card Category Icons
+  {
+    id: "card-category-swiftness",
+    filename: "card-category-swiftness.png",
+    prompt: `${STYLE_PREFIX} single icon, swiftness card category, flowing wind trail or speed lines, cyan teal color, 24x24 pixels, transparent background`,
+  },
+  {
+    id: "card-category-might",
+    filename: "card-category-might.png",
+    prompt: `${STYLE_PREFIX} single icon, might card category, clenched fist or rising flame, amber gold color, 24x24 pixels, transparent background`,
+  },
+  {
+    id: "card-category-resilience",
+    filename: "card-category-resilience.png",
+    prompt: `${STYLE_PREFIX} single icon, resilience card category, shield or oak leaf, green color, 24x24 pixels, transparent background`,
+  },
+  {
+    id: "card-category-precision",
+    filename: "card-category-precision.png",
+    prompt: `${STYLE_PREFIX} single icon, precision card category, crosshair target or magnifying glass, purple lavender color, 24x24 pixels, transparent background`,
+  },
+  {
+    id: "card-category-arcana",
+    filename: "card-category-arcana.png",
+    prompt: `${STYLE_PREFIX} single icon, arcana card category, mystic rune circle or glowing glyph, indigo blue-violet color, 24x24 pixels, transparent background`,
+  },
+  // Card Frames
+  {
+    id: "card-frame-tier1",
+    filename: "card-frame-tier1.png",
+    prompt: `${STYLE_PREFIX} ornate card border frame tier 1, simple clean ink border with subtle corner flourishes, parchment texture interior, 80x110 pixels, transparent outside border`,
+  },
+  {
+    id: "card-frame-tier2",
+    filename: "card-frame-tier2.png",
+    prompt: `${STYLE_PREFIX} ornate card border frame tier 2, elegant ink border with vine-like decorative corners and side accents, golden line accent, parchment texture interior, 80x110 pixels, transparent outside border`,
+  },
+  {
+    id: "card-frame-tier3",
+    filename: "card-frame-tier3.png",
+    prompt: `${STYLE_PREFIX} ornate card border frame tier 3, elaborate illuminated manuscript border with detailed floral corner ornaments and gold leaf accents, glowing edges, parchment interior, 80x110 pixels, transparent outside border`,
+  },
+  // Title & Menu
+  {
+    id: "ui-title-logo",
+    filename: "ui-title-logo.png",
+    prompt: `${STYLE_PREFIX} game logo text INKBINDERS, hand-lettered calligraphy with ink drips and quill flourishes, amber gold on dark background, ornate but readable, 480x120 pixels`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "ui-menu-button",
+    filename: "ui-menu-button.png",
+    prompt: `${STYLE_PREFIX} horizontal UI button background, ink-wash rectangle with torn paper edges and subtle watercolor gradient, dark parchment center, 200x40 pixels, transparent background`,
+    aspectRatio: "16:9",
+  },
   // ─── Parallax Background Images (15 total, 960×540 per image) ────
   // Scribe Hall backgrounds
   {

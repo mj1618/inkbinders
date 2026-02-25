@@ -147,6 +147,88 @@ function createDrop(
   };
 }
 
+// ─── Menu Button (sprite background with text fallback) ─────────────
+
+function MenuButton({
+  label,
+  selected,
+  onClick,
+  onMouseEnter,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  onMouseEnter: () => void;
+}) {
+  const [bgLoaded, setBgLoaded] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      className={`relative font-mono text-xl transition-colors ${
+        selected ? "text-white" : "text-zinc-400 hover:text-zinc-200"
+      }`}
+    >
+      {/* Probe for menu button background asset */}
+      {!bgLoaded && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/assets/ui-menu-button.png"
+          alt=""
+          className="hidden"
+          onLoad={() => setBgLoaded(true)}
+          onError={() => setBgLoaded(false)}
+        />
+      )}
+      {bgLoaded && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/assets/ui-menu-button.png"
+          alt=""
+          className="absolute inset-0 h-full w-full object-contain opacity-60"
+          onError={() => setBgLoaded(false)}
+        />
+      )}
+      <span className="relative">
+        {selected ? `\u25B8 ${label}` : `  ${label}`}
+      </span>
+    </button>
+  );
+}
+
+// ─── Title Logo (sprite with text fallback) ─────────────────────────
+
+function TitleLogo() {
+  const [logoLoaded, setLogoLoaded] = useState(false);
+
+  return logoLoaded ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/assets/ui-title-logo.png"
+      alt="INKBINDERS"
+      width={480}
+      height={120}
+      onError={() => setLogoLoaded(false)}
+    />
+  ) : (
+    <>
+      {/* Hidden probe image to detect if the asset exists */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/assets/ui-title-logo.png"
+        alt=""
+        className="hidden"
+        onLoad={() => setLogoLoaded(true)}
+        onError={() => setLogoLoaded(false)}
+      />
+      <h1 className="font-mono text-4xl font-bold tracking-[0.25em] text-amber-200">
+        INKBINDERS
+      </h1>
+    </>
+  );
+}
+
 // ─── Main Menu ──────────────────────────────────────────────────────
 
 const MENU_ITEMS_BASE = ["New Game", "Test Pages"] as const;
@@ -290,9 +372,7 @@ export default function Home() {
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center">
         <main className="flex flex-col items-center gap-6 px-8 text-center">
           {/* Title */}
-          <h1 className="font-mono text-4xl font-bold tracking-[0.25em] text-amber-200">
-            INKBINDERS
-          </h1>
+          <TitleLogo />
           <p className="font-mono text-lg italic text-zinc-500">
             The Library That Fights Back
           </p>
@@ -300,18 +380,13 @@ export default function Home() {
           {/* Menu */}
           <nav className="mt-8 flex flex-col items-center gap-3">
             {menuItems.map((item, i) => (
-              <button
+              <MenuButton
                 key={item}
+                label={item}
+                selected={selectedIndex === i}
                 onClick={() => handleMenuSelect(item)}
                 onMouseEnter={() => setSelectedIndex(i)}
-                className={`font-mono text-xl transition-colors ${
-                  selectedIndex === i
-                    ? "text-white"
-                    : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {selectedIndex === i ? `\u25B8 ${item}` : `  ${item}`}
-              </button>
+              />
             ))}
           </nav>
         </main>

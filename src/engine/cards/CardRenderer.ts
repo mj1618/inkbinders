@@ -8,6 +8,9 @@ import { CATEGORY_COLORS, STAT_DISPLAY_NAMES } from "./InkCard";
 import type { CraftingRecipe } from "./CraftingSystem";
 import type { ComputedModifiers } from "./CardModifierEngine";
 import { CARD_DEFINITIONS } from "./CardDefinitions";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { CARD_CATEGORY_ICON_MAP, CARD_FRAME_MAP } from "@/engine/ui/HUDSprites";
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -50,29 +53,52 @@ export class CardRenderer {
   ): void {
     const { x, y, width, height, selected, equipped, dimmed } = options;
     const color = CATEGORY_COLORS[card.category];
+    const assetManager = AssetManager.getInstance();
 
     ctx.save();
     if (dimmed) ctx.globalAlpha = 0.5;
 
-    // Background
-    ctx.fillStyle = CARD_BG_COLOR;
-    roundRect(ctx, x, y, width, height, CARD_BORDER_RADIUS);
-    ctx.fill();
+    // Card frame: sprite or rectangle
+    let drewSpriteFrame = false;
+    if (RenderConfig.useSprites()) {
+      const frameId = CARD_FRAME_MAP[card.tier];
+      if (frameId) {
+        const frameSheet = assetManager.getSpriteSheet(frameId);
+        if (frameSheet) {
+          // Scale the 80×110 frame sprite to the card's actual render size
+          const scaleX = width / CARD_RENDER_WIDTH;
+          const scaleY = height / CARD_RENDER_HEIGHT;
+          frameSheet.drawFrame(ctx, 0, x, y, false, scaleX, scaleY);
+          drewSpriteFrame = true;
+        }
+      }
+    }
+    if (RenderConfig.useRectangles() || !drewSpriteFrame) {
+      // In "both" mode, draw rectangles semi-transparent so sprites show through
+      if (drewSpriteFrame && RenderConfig.useSprites()) ctx.globalAlpha = (dimmed ? 0.5 : 1) * 0.4;
+      // Background
+      ctx.fillStyle = CARD_BG_COLOR;
+      roundRect(ctx, x, y, width, height, CARD_BORDER_RADIUS);
+      ctx.fill();
 
-    // Subtle gradient tint
-    const grad = ctx.createLinearGradient(x, y, x, y + height);
-    grad.addColorStop(0, "rgba(0,0,0,0)");
-    grad.addColorStop(1, hexToRgba(color, 0.08));
-    ctx.fillStyle = grad;
-    roundRect(ctx, x, y, width, height, CARD_BORDER_RADIUS);
-    ctx.fill();
+      // Subtle gradient tint
+      const grad = ctx.createLinearGradient(x, y, x, y + height);
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(1, hexToRgba(color, 0.08));
+      ctx.fillStyle = grad;
+      roundRect(ctx, x, y, width, height, CARD_BORDER_RADIUS);
+      ctx.fill();
 
-    // Border
-    const borderWidth = selected ? 3 : 2;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = borderWidth;
-    roundRect(ctx, x, y, width, height, CARD_BORDER_RADIUS);
-    ctx.stroke();
+      // Border
+      const borderWidth = selected ? 3 : 2;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = borderWidth;
+      roundRect(ctx, x, y, width, height, CARD_BORDER_RADIUS);
+      ctx.stroke();
+      // Reset alpha after "both" mode reduction
+      if (dimmed) ctx.globalAlpha = 0.5;
+      else ctx.globalAlpha = 1;
+    }
 
     // Selected glow
     if (selected) {
@@ -106,11 +132,29 @@ export class CardRenderer {
       ctx.textBaseline = "alphabetic";
     }
 
-    // Glyph (centered)
-    ctx.fillStyle = color;
-    ctx.font = `${Math.round(width * 0.3)}px serif`;
-    ctx.textAlign = "center";
-    ctx.fillText(card.glyph, x + width / 2, y + height * 0.52);
+    // Category icon / glyph (centered)
+    const glyphCx = x + width / 2;
+    const glyphCy = y + height * 0.52;
+    let drewCategoryIcon = false;
+
+    if (RenderConfig.useSprites()) {
+      const catSpriteId = CARD_CATEGORY_ICON_MAP[card.category];
+      if (catSpriteId) {
+        const catSheet = assetManager.getSpriteSheet(catSpriteId);
+        if (catSheet) {
+          catSheet.drawFrame(ctx, 0, glyphCx - 12, glyphCy - 12);
+          drewCategoryIcon = true;
+        }
+      }
+    }
+    if (RenderConfig.useRectangles() || !drewCategoryIcon) {
+      // In "both" mode, draw rectangles semi-transparent so sprites show through
+      if (drewCategoryIcon && RenderConfig.useSprites()) ctx.globalAlpha *= 0.4;
+      ctx.fillStyle = color;
+      ctx.font = `${Math.round(width * 0.3)}px serif`;
+      ctx.textAlign = "center";
+      ctx.fillText(card.glyph, glyphCx, glyphCy);
+    }
 
     // Name (bottom)
     ctx.fillStyle = "#ffffff";

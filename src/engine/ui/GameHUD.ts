@@ -10,6 +10,14 @@ import type { IndexMark } from "@/engine/abilities/IndexMark";
 import type { DayNightCycle } from "@/engine/world/DayNightCycle";
 import { InputAction } from "@/engine/input/InputManager";
 import type { InputManager } from "@/engine/input/InputManager";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AssetManager } from "@/engine/core/AssetManager";
+import {
+  HUD_SPRITE_CONFIGS,
+  HEART_FULL,
+  HEART_EMPTY,
+  WEAPON_ICON_MAP,
+} from "./HUDSprites";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -61,6 +69,10 @@ const ABILITY_SLOT_HEIGHT = 52;
 const ABILITY_SLOT_SPACING = 4;
 const ABILITY_ICON_SIZE = 24;
 const ABILITY_BAR_X = 16;
+
+// Heart icons (sprite mode)
+const HEART_SIZE = 16;
+const HEART_SPACING = 18; // 16px icon + 2px gap
 
 // Weapon indicator
 const WEAPON_WIDTH = 80;
@@ -121,6 +133,9 @@ export class GameHUD {
   private prevHealth = -1;
   private damageFlashTimer = 0;
 
+  // Sprite loading state
+  private spritesLoaded = false;
+
   constructor(systems: GameHUDSystems, config?: Partial<GameHUDConfig>) {
     this.systems = systems;
     this.config = {
@@ -133,6 +148,13 @@ export class GameHUD {
       showNotifications: true,
       ...config,
     };
+    this.initSprites();
+  }
+
+  private initSprites(): void {
+    AssetManager.getInstance().loadAll(HUD_SPRITE_CONFIGS).then(() => {
+      this.spritesLoaded = true;
+    });
   }
 
   /** Update HUD state. Call once per frame. */
@@ -338,6 +360,60 @@ export class GameHUD {
     const hp = health.health;
     const maxHp = health.maxHealth;
 
+    if (RenderConfig.useSprites() && this.spritesLoaded) {
+      this.renderHealthHearts(ctx, hp, maxHp);
+    }
+    if (RenderConfig.useRectangles()) {
+      // In "both" mode, draw rectangles semi-transparent so sprites show through
+      if (RenderConfig.useSprites()) ctx.globalAlpha = 0.4;
+      this.renderHealthBarRect(ctx, hp, maxHp);
+      if (RenderConfig.useSprites()) ctx.globalAlpha = 1;
+    }
+  }
+
+  private renderHealthHearts(ctx: CanvasRenderingContext2D, hp: number, maxHp: number): void {
+    const heartSheet = AssetManager.getInstance().getSpriteSheet("hud-health-heart");
+    if (!heartSheet) return;
+
+    const isFlashing = this.damageFlashTimer > 0;
+    const isLowHp = hp === 1 && hp > 0;
+    const pulseScale = isLowHp
+      ? 1 + 0.15 * Math.sin(this.frameCount * HP_LOW_PULSE_RATE * 2 * Math.PI / 60)
+      : 1;
+
+    for (let i = 0; i < maxHp; i++) {
+      const frameIdx = i < hp ? HEART_FULL : HEART_EMPTY;
+      const hx = HP_BAR_X + i * HEART_SPACING;
+      const hy = HP_BAR_Y;
+
+      ctx.save();
+      if (isLowHp && i < hp) {
+        const cx = hx + HEART_SIZE / 2;
+        const cy = hy + HEART_SIZE / 2;
+        ctx.translate(cx, cy);
+        ctx.scale(pulseScale, pulseScale);
+        ctx.translate(-cx, -cy);
+      }
+
+      heartSheet.drawFrame(ctx, frameIdx, hx, hy);
+
+      // Damage flash: redraw heart with white tint by drawing white over it
+      if (isFlashing) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.fillRect(hx, hy, HEART_SIZE, HEART_SIZE);
+      }
+
+      ctx.restore();
+    }
+
+    // HP text
+    ctx.fillStyle = "#e5e7eb";
+    ctx.font = "10px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(`${hp} / ${maxHp}`, HP_BAR_X, HP_BAR_Y + HEART_SIZE + 12);
+  }
+
+  private renderHealthBarRect(ctx: CanvasRenderingContext2D, hp: number, maxHp: number): void {
     // Background
     ctx.fillStyle = "#1f1f1f";
     roundRect(ctx, HP_BAR_X, HP_BAR_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT, 3);
@@ -351,11 +427,9 @@ export class GameHUD {
     // Current HP fill
     const fillWidth = maxHp > 0 ? (hp / maxHp) * HP_BAR_WIDTH : 0;
     if (fillWidth > 0) {
-      // Determine fill color
       if (this.damageFlashTimer > 0) {
         ctx.fillStyle = "#ffffff";
       } else if (hp === 1) {
-        // Pulse between red and orange at 4 Hz
         const t = (Math.sin(this.frameCount * HP_LOW_PULSE_RATE * 2 * Math.PI / 60) + 1) / 2;
         ctx.fillStyle = t > 0.5 ? "#f97316" : "#ef4444";
       } else {
@@ -381,6 +455,13 @@ export class GameHUD {
   private renderAbilityBar(ctx: CanvasRenderingContext2D, canvasHeight: number): void {
     const barY = canvasHeight - ABILITY_BAR_Y_OFFSET;
 
+    const ABILITY_SPRITE_IDS = [
+      "hud-ability-stitch",
+      "hud-ability-redaction",
+      "hud-ability-paste",
+      "hud-ability-index",
+    ];
+
     const abilities: Array<{
       key: string;
       name: string;
@@ -388,6 +469,7 @@ export class GameHUD {
       activeCount: number;
       maxCount: number;
       enabled: boolean;
+      spriteId: string;
       drawIcon: (cx: number, cy: number) => void;
     }> = [
       {
@@ -397,6 +479,7 @@ export class GameHUD {
         activeCount: this.systems.marginStitch?.activeStitch ? 1 : 0,
         maxCount: 1,
         enabled: this.systems.marginStitch?.params.enabled ?? false,
+        spriteId: ABILITY_SPRITE_IDS[0],
         drawIcon: (cx, cy) => this.drawStitchIcon(ctx, cx, cy),
       },
       {
@@ -406,6 +489,7 @@ export class GameHUD {
         activeCount: this.systems.redaction?.activeRedactions.length ?? 0,
         maxCount: this.systems.redaction?.params.maxActiveRedactions ?? 2,
         enabled: this.systems.redaction?.params.enabled ?? false,
+        spriteId: ABILITY_SPRITE_IDS[1],
         drawIcon: (cx, cy) => this.drawRedactionIcon(ctx, cx, cy),
       },
       {
@@ -415,6 +499,7 @@ export class GameHUD {
         activeCount: this.systems.pasteOver?.activePastes.length ?? 0,
         maxCount: this.systems.pasteOver?.params.maxActivePastes ?? 3,
         enabled: this.systems.pasteOver?.params.enabled ?? false,
+        spriteId: ABILITY_SPRITE_IDS[2],
         drawIcon: (cx, cy) => this.drawPasteOverIcon(ctx, cx, cy),
       },
       {
@@ -424,9 +509,12 @@ export class GameHUD {
         activeCount: this.systems.indexMark?.marks.length ?? 0,
         maxCount: this.systems.indexMark?.params.maxMarks ?? 4,
         enabled: this.systems.indexMark?.params.enabled ?? false,
+        spriteId: ABILITY_SPRITE_IDS[3],
         drawIcon: (cx, cy) => this.drawIndexMarkIcon(ctx, cx, cy),
       },
     ];
+
+    const assetManager = AssetManager.getInstance();
 
     for (let i = 0; i < abilities.length; i++) {
       const ab = abilities[i];
@@ -460,7 +548,23 @@ export class GameHUD {
       const iconCy = slotY + 14 + ABILITY_ICON_SIZE / 2;
       if (ab.enabled) {
         ctx.globalAlpha = ab.cooldownRatio > 0 ? 0.4 : 1.0;
-        ab.drawIcon(iconCx, iconCy);
+
+        if (RenderConfig.useSprites() && this.spritesLoaded) {
+          const sheet = assetManager.getSpriteSheet(ab.spriteId);
+          if (sheet) {
+            // Center the 32×32 sprite icon in the 24×24 icon area
+            const spriteSize = 32;
+            const drawX = iconCx - spriteSize / 2;
+            const drawY = iconCy - spriteSize / 2;
+            sheet.drawFrame(ctx, 0, drawX, drawY);
+          }
+        }
+        if (RenderConfig.useRectangles()) {
+          // In "both" mode, draw rectangles semi-transparent so sprites show through
+          if (RenderConfig.useSprites()) ctx.globalAlpha *= 0.4;
+          ab.drawIcon(iconCx, iconCy);
+        }
+
         ctx.globalAlpha = 1.0;
       }
 
@@ -513,15 +617,50 @@ export class GameHUD {
     const iconCy = wy + 18;
     const isAttacking = combat.attackPhase !== "idle";
 
-    if (combat.currentWeapon === "quill-spear") {
-      // Draw spear/quill line
+    if (RenderConfig.useSprites() && this.spritesLoaded) {
+      const spriteId = WEAPON_ICON_MAP[combat.currentWeapon];
+      if (spriteId) {
+        const sheet = AssetManager.getInstance().getSpriteSheet(spriteId);
+        if (sheet) {
+          const spriteSize = 32;
+          sheet.drawFrame(ctx, 0, iconCx - spriteSize / 2, iconCy - spriteSize / 2);
+        }
+      }
+    }
+    if (RenderConfig.useRectangles()) {
+      // In "both" mode, draw rectangles semi-transparent so sprites show through
+      if (RenderConfig.useSprites()) ctx.globalAlpha = 0.4;
+      this.renderWeaponIconRect(ctx, combat.currentWeapon, iconCx, iconCy, isAttacking);
+      ctx.globalAlpha = 1;
+    }
+
+    // Weapon name
+    const weaponName = combat.currentWeapon === "quill-spear" ? "Spear" : "Snap";
+    ctx.fillStyle = "#d1d5db";
+    ctx.font = "10px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(weaponName, iconCx, wy + WEAPON_HEIGHT - 10);
+
+    // Switch hint
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "8px monospace";
+    ctx.fillText("[K]", iconCx, wy + WEAPON_HEIGHT - 2);
+  }
+
+  private renderWeaponIconRect(
+    ctx: CanvasRenderingContext2D,
+    weapon: string,
+    iconCx: number,
+    iconCy: number,
+    isAttacking: boolean,
+  ): void {
+    if (weapon === "quill-spear") {
       ctx.strokeStyle = isAttacking ? "#93c5fd" : "#60a5fa";
       ctx.lineWidth = isAttacking ? 3 : 2;
       ctx.beginPath();
       ctx.moveTo(iconCx - 14, iconCy + 8);
       ctx.lineTo(iconCx + 14, iconCy - 8);
       ctx.stroke();
-      // Pointed tip
       ctx.beginPath();
       ctx.moveTo(iconCx + 14, iconCy - 8);
       ctx.lineTo(iconCx + 10, iconCy - 4);
@@ -530,7 +669,6 @@ export class GameHUD {
       ctx.fillStyle = isAttacking ? "#93c5fd" : "#60a5fa";
       ctx.fill();
     } else {
-      // Draw starburst for ink-snap
       const color = isAttacking ? "#a5b4fc" : "#818cf8";
       ctx.strokeStyle = color;
       ctx.lineWidth = isAttacking ? 2.5 : 2;
@@ -549,18 +687,6 @@ export class GameHUD {
       ctx.fillStyle = color;
       ctx.fill();
     }
-
-    // Weapon name
-    const weaponName = combat.currentWeapon === "quill-spear" ? "Spear" : "Snap";
-    ctx.fillStyle = "#d1d5db";
-    ctx.font = "10px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(weaponName, iconCx, wy + WEAPON_HEIGHT - 10);
-
-    // Switch hint
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "8px monospace";
-    ctx.fillText("[K]", iconCx, wy + WEAPON_HEIGHT - 2);
   }
 
   private renderClock(ctx: CanvasRenderingContext2D, canvasWidth: number): void {
@@ -588,33 +714,42 @@ export class GameHUD {
     const iconY = clockY + 6;
     const iconR = 6;
 
-    if (phase === "day" || phase === "dawn") {
-      // Sun — filled circle with rays
-      ctx.fillStyle = "#fbbf24";
-      ctx.beginPath();
-      ctx.arc(iconX, iconY, iconR, 0, Math.PI * 2);
-      ctx.fill();
-      // Small rays
-      ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth = 1;
-      for (let r = 0; r < 8; r++) {
-        const angle = (r / 8) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(iconX + Math.cos(angle) * (iconR + 2), iconY + Math.sin(angle) * (iconR + 2));
-        ctx.lineTo(iconX + Math.cos(angle) * (iconR + 4), iconY + Math.sin(angle) * (iconR + 4));
-        ctx.stroke();
+    if (RenderConfig.useSprites() && this.spritesLoaded) {
+      const iconId = (phase === "day" || phase === "dawn") ? "hud-sun" : "hud-moon";
+      const sheet = AssetManager.getInstance().getSpriteSheet(iconId);
+      if (sheet) {
+        // 16×16 icon centered on (iconX, iconY)
+        sheet.drawFrame(ctx, 0, iconX - 8, iconY - 8);
       }
-    } else {
-      // Moon — crescent
-      ctx.fillStyle = "#e5e7eb";
-      ctx.beginPath();
-      ctx.arc(iconX, iconY, iconR, 0, Math.PI * 2);
-      ctx.fill();
-      // Dark cutout for crescent
-      ctx.fillStyle = "#1a1a1a";
-      ctx.beginPath();
-      ctx.arc(iconX + 3, iconY - 2, iconR - 1, 0, Math.PI * 2);
-      ctx.fill();
+    }
+    if (RenderConfig.useRectangles()) {
+      // In "both" mode, draw rectangles semi-transparent so sprites show through
+      if (RenderConfig.useSprites()) ctx.globalAlpha = 0.4;
+      if (phase === "day" || phase === "dawn") {
+        ctx.fillStyle = "#fbbf24";
+        ctx.beginPath();
+        ctx.arc(iconX, iconY, iconR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#fbbf24";
+        ctx.lineWidth = 1;
+        for (let r = 0; r < 8; r++) {
+          const angle = (r / 8) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(iconX + Math.cos(angle) * (iconR + 2), iconY + Math.sin(angle) * (iconR + 2));
+          ctx.lineTo(iconX + Math.cos(angle) * (iconR + 4), iconY + Math.sin(angle) * (iconR + 4));
+          ctx.stroke();
+        }
+      } else {
+        ctx.fillStyle = "#e5e7eb";
+        ctx.beginPath();
+        ctx.arc(iconX, iconY, iconR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1a1a1a";
+        ctx.beginPath();
+        ctx.arc(iconX + 3, iconY - 2, iconR - 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     }
 
     // Phase name + time text

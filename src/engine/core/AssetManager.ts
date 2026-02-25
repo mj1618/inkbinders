@@ -21,6 +21,10 @@ const PLACEHOLDER_COLORS: Record<string, string> = {
   "bg-astral": "#1a1a4e",
   "bg-maritime": "#1a4a4a",
   "bg-gothic": "#2a1a1a",
+  "combat-spear": "#60a5fa",
+  "combat-snap": "#4338ca",
+  "combat-hit": "#fbbf24",
+  "combat-hitstop": "#ffffff",
   "vfx-stitch": "#f59e0b",
   "vfx-redaction": "#ef4444",
   "vfx-paste": "#f59e0b",
@@ -28,6 +32,9 @@ const PLACEHOLDER_COLORS: Record<string, string> = {
   "vfx-teleport": "#f59e0b",
   "vfx-index": "#f59e0b",
   vfx: "#fbbf24",
+  hud: "#60a5fa",
+  card: "#a78bfa",
+  ui: "#60a5fa",
 };
 
 function getPlaceholderColor(id: string): string {
