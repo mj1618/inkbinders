@@ -118,12 +118,30 @@ export interface FogZoneDef {
   density: number;
 }
 
+/** Health pickup placement */
+export interface HealthPickupDef {
+  id: string;
+  position: Vec2;
+  /** Hearts restored (default 1) */
+  healAmount: number;
+}
+
 /** Vine anchor placement */
 export interface RoomVineAnchor {
   id: string;
   position: Vec2;
   ropeLength: number;
   type: "hanging" | "ceiling" | "branch";
+}
+
+/** Challenge room timer config — defines start/end zones and par time */
+export interface ChallengeTimer {
+  /** Player overlapping this rect starts the timer */
+  startZone: Rect;
+  /** Player overlapping this rect stops the timer (challenge complete) */
+  endZone: Rect;
+  /** Par time in seconds — displayed as the target to beat */
+  parTime: number;
 }
 
 /** Complete room definition — everything needed to instantiate a room */
@@ -155,6 +173,10 @@ export interface RoomData {
   gravityWells?: GravityWellDef[];
   /** Current zones (Maritime Ledger biome) */
   currentZones?: CurrentZoneDef[];
+  /** Fog zones (Gothic Errata biome) */
+  fogZones?: FogZoneDef[];
+  /** Health pickups — restore hearts when collected */
+  healthPickups?: HealthPickupDef[];
   /** Optional ability pickup — shrine pedestal */
   abilityPickup?: AbilityPickup;
   /** Optional boss gate — a platform that blocks progress until a boss is defeated */
@@ -162,6 +184,14 @@ export interface RoomData {
     bossId: string;
     platformRect: Rect;
   };
+  /** Card drop — a card the player can find in this room (one-time pickup) */
+  cardDrop?: {
+    definitionId: string;
+    tier: 1 | 2 | 3;
+    position: Vec2;
+  };
+  /** Optional challenge timer — makes this room a timed challenge */
+  challengeTimer?: ChallengeTimer;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────
