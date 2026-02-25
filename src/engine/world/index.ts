@@ -69,6 +69,7 @@ export {
   type AbilityPickup,
   type EnemySpawn,
   type RoomVineAnchor,
+  type GravityWellDef,
   type ExitDirection,
   type GateAbility,
   GATE_COLORS,
@@ -99,6 +100,17 @@ export { SCRIBE_HALL } from "./scribeHall";
 export { ARCHIVE_PASSAGE, DEMO_WORLD_DATA, createDemoWorld } from "./demoWorld";
 export { CENTRAL_ARCHIVES_ROOMS, CENTRAL_ARCHIVES_ROOM_IDS } from "./centralArchivesRooms";
 export { ABILITY_SHRINE_ROOMS, ABILITY_SHRINE_ROOM_IDS } from "./abilityShrineRooms";
+export { ASTRAL_ATLAS_ROOMS, ASTRAL_ATLAS_ROOM_IDS } from "./astralAtlasRooms";
+export {
+  WORLD_OBJECT_SPRITE_CONFIGS,
+  WORLD_OBJECT_ANIMATIONS,
+  getWorldObjectConfigs,
+  getWorldObjectAnimations,
+  loadWorldObjectSprites,
+  renderObstacleSprite,
+  getGateFrameIndex,
+  getExitArrowRotation,
+} from "./WorldObjectSprites";
 export { PlayerProgression, type PlayerProgressionData, type CardDeckData } from "./PlayerProgression";
 export { WorldGraph, type WorldRegion, type WorldGraphData } from "./WorldGraph";
 export { GameWorld, type GameWorldConfig, type WorldFrameState, type RoomTransitionResult } from "./GameWorld";

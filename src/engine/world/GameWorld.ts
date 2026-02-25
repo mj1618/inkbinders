@@ -2,7 +2,7 @@
 // Owns RoomManager, DayNightCycle, PlayerProgression; coordinates global game state
 
 import type { Rect } from "@/lib/types";
-import type { RoomExit, RoomId, EnemySpawn } from "./Room";
+import type { RoomExit, RoomId, EnemySpawn, GateAbility } from "./Room";
 import type { BiomeTheme } from "./Biome";
 import { getBiomeTheme, DEFAULT_THEME } from "./Biome";
 import { RoomManager } from "./RoomManager";
@@ -46,6 +46,7 @@ export class GameWorld {
 
   currentTheme: BiomeTheme;
   private roomTransitionCb: ((result: RoomTransitionResult) => void) | null = null;
+  private lastPickedAbility: GateAbility | null = null;
 
   constructor(config: GameWorldConfig) {
     this.worldGraph = config.worldGraph;
@@ -92,6 +93,21 @@ export class GameWorld {
       if (exit) {
         this.transitionToRoom(exit);
       }
+
+      // Check ability pickup zones
+      const pickup = this.roomManager.currentRoom.abilityPickup;
+      if (pickup && !this.progression.hasAbility(pickup.ability)) {
+        const z = pickup.zone;
+        const overlaps =
+          playerBounds.x < z.x + z.width &&
+          playerBounds.x + playerBounds.width > z.x &&
+          playerBounds.y < z.y + z.height &&
+          playerBounds.y + playerBounds.height > z.y;
+        if (overlaps) {
+          this.progression.unlockAbility(pickup.ability);
+          this.lastPickedAbility = pickup.ability;
+        }
+      }
     }
 
     const isHub = this.worldGraph.isHub(this.roomManager.currentRoom.id);
@@ -108,6 +124,13 @@ export class GameWorld {
       theme: this.currentTheme,
       isHub,
     };
+  }
+
+  /** Returns the ability just picked up this frame (or null). Auto-clears after read. */
+  consumePickedAbility(): GateAbility | null {
+    const ability = this.lastPickedAbility;
+    this.lastPickedAbility = null;
+    return ability;
   }
 
   transitionToRoom(exit: RoomExit): void {

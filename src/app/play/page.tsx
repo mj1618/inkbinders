@@ -26,6 +26,7 @@ import {
   renderGates,
   renderExitIndicators,
   renderTransitionOverlay,
+  renderAbilityPedestal,
 } from "@/engine/world/RoomRenderer";
 import type { Obstacle } from "@/engine/physics/Obstacles";
 import {
@@ -40,6 +41,7 @@ import type { LoadedGameState } from "@/engine/save/SaveSystem";
 import { useSaveSlots } from "@/hooks/useSaveSlots";
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS } from "@/lib/constants";
 import type { Vec2 } from "@/lib/types";
+import { GATE_COLORS } from "@/engine/world/Room";
 import type { GateAbility } from "@/engine/world/Room";
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -637,6 +639,52 @@ function PlayPageInner() {
               roomManager.startTransition(exit);
             }
 
+            // Check ability pickups
+            const pickup = roomManager.currentRoom.abilityPickup;
+            if (pickup && !session.hasAbility(pickup.ability)) {
+              const pz = pickup.zone;
+              const pb = playerRect;
+              const overlaps =
+                pb.x < pz.x + pz.width &&
+                pb.x + pb.width > pz.x &&
+                pb.y < pz.y + pz.height &&
+                pb.y + pb.height > pz.y;
+              if (overlaps) {
+                session.unlockAbility(pickup.ability);
+                const abilityNames: Record<GateAbility, string> = {
+                  "margin-stitch": "Margin Stitch",
+                  "redaction": "Redaction",
+                  "paste-over": "Paste-Over",
+                  "index-mark": "Index Mark",
+                };
+                const keyBinds: Record<GateAbility, string> = {
+                  "margin-stitch": "E",
+                  "redaction": "Q",
+                  "paste-over": "R",
+                  "index-mark": "F",
+                };
+                hud.notify(
+                  `${abilityNames[pickup.ability]} Acquired — Press [${keyBinds[pickup.ability]}] to use`,
+                  "ability",
+                );
+                particleSystem.emit({
+                  x: pickup.position.x,
+                  y: pickup.position.y,
+                  count: 20,
+                  speedMin: 60,
+                  speedMax: 160,
+                  angleMin: 0,
+                  angleMax: Math.PI * 2,
+                  lifeMin: 0.3,
+                  lifeMax: 0.8,
+                  sizeMin: 2,
+                  sizeMax: 5,
+                  colors: [GATE_COLORS[pickup.ability], "#ffffff", "#e0e7ff"],
+                  gravity: -40,
+                });
+              }
+            }
+
             // Auto-open gates near player
             const abilities = session.getUnlockedAbilities();
             for (const gate of roomManager.currentGates) {
@@ -931,6 +979,17 @@ function PlayPageInner() {
 
             // Gates
             renderGates(rCtx, roomManager.currentGates, time);
+
+            // Ability pedestal
+            const roomPickup = roomManager.currentRoom.abilityPickup;
+            if (roomPickup) {
+              renderAbilityPedestal(
+                rCtx,
+                roomPickup,
+                session.hasAbility(roomPickup.ability),
+                time,
+              );
+            }
 
             // Exit indicators
             renderExitIndicators(rCtx, roomManager.currentRoom.exits, time);

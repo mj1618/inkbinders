@@ -8,6 +8,8 @@ import { SCRIBE_HALL } from "./scribeHall";
 import { TUTORIAL_CORRIDOR, VERTICAL_SHAFT, VINE_GARDEN } from "./presetRooms";
 import { HERBARIUM_WING_ROOMS, HERBARIUM_WING_ROOM_IDS } from "./herbariumRooms";
 import { CENTRAL_ARCHIVES_ROOMS, CENTRAL_ARCHIVES_ROOM_IDS } from "./centralArchivesRooms";
+import { ASTRAL_ATLAS_ROOMS, ASTRAL_ATLAS_ROOM_IDS } from "./astralAtlasRooms";
+import { ABILITY_SHRINE_ROOMS } from "./abilityShrineRooms";
 
 const T = 32;
 
@@ -94,6 +96,12 @@ export const DEMO_WORLD_DATA: WorldGraphData = {
       biomeId: "default",
       roomIds: ["archive-passage", "vertical-shaft", ...CENTRAL_ARCHIVES_ROOM_IDS],
     },
+    {
+      id: "astral-atlas-wing",
+      name: "Astral Atlas Wing",
+      biomeId: "astral-atlas",
+      roomIds: [...ASTRAL_ATLAS_ROOM_IDS, "paste-shrine"],
+    },
   ],
 };
 
@@ -111,6 +119,12 @@ export function createDemoWorld(): { worldGraph: WorldGraph; rooms: Map<RoomId, 
   }
   for (const [id, room] of Object.entries(CENTRAL_ARCHIVES_ROOMS)) {
     rooms.set(id, room);
+  }
+  for (const [id, room] of Object.entries(ASTRAL_ATLAS_ROOMS)) {
+    rooms.set(id, room);
+  }
+  if (ABILITY_SHRINE_ROOMS["paste-shrine"]) {
+    rooms.set("paste-shrine", ABILITY_SHRINE_ROOMS["paste-shrine"]);
   }
 
   const worldGraph = new WorldGraph(DEMO_WORLD_DATA, rooms);

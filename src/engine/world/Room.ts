@@ -86,6 +86,15 @@ export interface EnemySpawn {
   facingRight: boolean;
 }
 
+/** Gravity well placement for the GravityWellSystem (Astral Atlas biome) */
+export interface GravityWellDef {
+  id: string;
+  position: Vec2;
+  radius: number;
+  strength: number;
+  type: "attract" | "repel";
+}
+
 /** Vine anchor placement */
 export interface RoomVineAnchor {
   id: string;
@@ -119,6 +128,8 @@ export interface RoomData {
   enemies: EnemySpawn[];
   /** Vine anchors (Herbarium Folio biome) */
   vineAnchors: RoomVineAnchor[];
+  /** Gravity wells (Astral Atlas biome) */
+  gravityWells?: GravityWellDef[];
   /** Optional ability pickup — shrine pedestal */
   abilityPickup?: AbilityPickup;
   /** Optional boss gate — a platform that blocks progress until a boss is defeated */
