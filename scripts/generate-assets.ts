@@ -24,15 +24,17 @@ interface AssetPrompt {
 }
 
 const ASSET_PROMPTS: AssetPrompt[] = [
+  // Player sprite sheets (9 total)
   {
     id: "player-idle",
     filename: "player-idle.png",
-    prompt: `${STYLE_PREFIX} small hooded archivist character, front-facing idle pose, wearing ink-stained robe with scroll belt, chunky readable silhouette, warm parchment and indigo tones, 64x64 pixel art scale, game sprite`,
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character in idle breathing pose, 4 frames side by side in a horizontal strip, subtle breathing animation: chest rises and falls, robe sways gently, each frame 64x64 pixels, warm parchment and indigo tones, game sprite sheet, 256x64 total`,
+    aspectRatio: "16:9",
   },
   {
     id: "player-run",
     filename: "player-run-sheet.png",
-    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character running, 4 frames side by side in a horizontal strip, each frame 64x64 pixels, ink-stained robe flowing, dynamic pose progression, warm parchment and indigo tones, game sprite sheet, 256x64 total`,
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character running, 6 frames side by side in a horizontal strip, full run cycle with contact-pass-reach progression, ink-stained robe flowing, each frame 64x64 pixels, warm parchment and indigo tones, game sprite sheet, 384x64 total`,
     aspectRatio: "16:9",
   },
   {
@@ -41,6 +43,43 @@ const ASSET_PROMPTS: AssetPrompt[] = [
     prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character jumping, 3 frames side by side: jump launch crouching, mid-air at apex with robe flowing, falling with arms up, each frame 64x64 pixels, warm parchment and indigo tones, game sprite sheet, 192x64 total`,
     aspectRatio: "16:9",
   },
+  {
+    id: "player-dash",
+    filename: "player-dash-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character dashing, 3 frames side by side: wind-up crouch with trailing ink, mid-dash blur with ink streak behind, dash exit with momentum lean, each frame 64x64 pixels, warm parchment and hot pink ink trail tones, game sprite sheet, 192x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "player-wall-slide",
+    filename: "player-wall-slide-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character sliding down a wall, 2 frames side by side: gripping wall with one hand reaching up, sliding down with robe trailing upward, each frame 64x64 pixels, warm parchment and teal tones, game sprite sheet, 128x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "player-crouch",
+    filename: "player-crouch-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character crouching, 2 frames side by side: low crouch with robe pooled around feet, crouch-slide with speed lines and robe streaming behind, each frame 64x64 pixels, warm parchment and dark blue tones, game sprite sheet, 128x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "player-land",
+    filename: "player-land-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character landing hard, 3 frames side by side: heavy impact with dust puff and squashed pose, recovery pushing up from ground, standing up with slight wobble, each frame 64x64 pixels, warm parchment and amber tones, game sprite sheet, 192x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "player-attack-spear",
+    filename: "player-attack-spear-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character thrusting a quill spear, 4 frames side by side: wind-up with spear pulled back, forward thrust with arm extended, spear at full extension with ink splash at tip, recovery pulling spear back, each frame 96x64 pixels (wider to show spear reach), warm parchment and steel blue tones, game sprite sheet, 384x64 total`,
+    aspectRatio: "16:9",
+  },
+  {
+    id: "player-attack-snap",
+    filename: "player-attack-snap-sheet.png",
+    prompt: `${STYLE_PREFIX} sprite sheet of a small hooded archivist character performing an ink snap attack, 3 frames side by side: hand raised with gathering ink energy, snap gesture with ink burst radiating outward, fade out with ink droplets scattering, each frame 64x64 pixels, warm parchment and dark violet tones, game sprite sheet, 192x64 total`,
+    aspectRatio: "16:9",
+  },
+  // Tile sets
   {
     id: "tiles-scribe-hall",
     filename: "tiles-scribe-hall.png",
