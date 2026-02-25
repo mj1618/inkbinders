@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
 import { Slider } from "@/components/debug/Slider";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Engine } from "@/engine/core/Engine";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
@@ -12,6 +13,7 @@ import type { SurfaceType } from "@/engine/physics/Surfaces";
 import { getSurfaceProps, SURFACE_PROPERTIES } from "@/engine/physics/Surfaces";
 import { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { ScreenShake } from "@/engine/core/ScreenShake";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import {
   DayNightCycle,
   DEFAULT_DAY_NIGHT_PARAMS,
@@ -193,6 +195,7 @@ export default function DayNightTest() {
   );
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const { tileMap, originals } = createTestLevel();
@@ -259,7 +262,7 @@ export default function DayNightTest() {
       if (e.key === "2") cycle.skipTo("day");
       if (e.key === "3") cycle.skipTo("dusk");
       if (e.key === "4") cycle.skipTo("night");
-      if (e.key === "d" || e.key === "D") {
+      if (e.key === "`") {
         refs.showOverlays = !refs.showOverlays;
       }
     };
@@ -391,8 +394,11 @@ export default function DayNightTest() {
       // Update particles
       particleSystem.update(dt);
 
-      // Update screen shake
-      screenShake.update();
+      // Update screen shake and apply offset to camera for this frame.
+      // camera.follow() next frame will converge back toward the target.
+      const shakeOffset = screenShake.update();
+      camera.position.x += shakeOffset.offsetX;
+      camera.position.y += shakeOffset.offsetY;
 
       // UI readout updates (throttled to ~10Hz)
       uiUpdateCounter.current++;
@@ -762,12 +768,13 @@ export default function DayNightTest() {
 
           {/* Controls hint */}
           <div className="w-[960px] text-xs font-mono text-zinc-600">
-            Keys: Arrows=Move, Space/Z/Up=Jump, X/Shift=Dash, D=Debug, T=Pause/Resume, 1-4=Skip to Dawn/Day/Dusk/Night
+            Keys: Arrows=Move, Space/Z/Up=Jump, X/Shift=Dash, `=Debug, T=Pause/Resume, 1-4=Skip to Dawn/Day/Dusk/Night
           </div>
         </div>
 
         {/* Debug panel */}
         <DebugPanel title="Day/Night">
+          <RenderModeToggle />
           {/* Cycle Info (always visible) */}
           <div className="flex flex-col gap-1 text-xs font-mono">
             <div className="text-zinc-400 uppercase tracking-wider text-[10px]">

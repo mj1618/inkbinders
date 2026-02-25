@@ -1,5 +1,14 @@
 // World — Room system, biomes, day-night cycle
-export { type BiomeTheme, HERBARIUM_FOLIO_THEME } from "./Biome";
+export {
+  type BiomeTheme,
+  DEFAULT_THEME,
+  SCRIBE_HALL_THEME,
+  HERBARIUM_FOLIO_THEME,
+  ASTRAL_ATLAS_THEME,
+  MARITIME_LEDGER_THEME,
+  GOTHIC_ERRATA_THEME,
+  getBiomeTheme,
+} from "./Biome";
 export {
   VineSystem,
   type VineAnchor,
@@ -62,3 +71,16 @@ export {
 } from "./RoomRenderer";
 export { RoomEditor, type EditorTool } from "./RoomEditor";
 export { PRESET_ROOMS, PRESET_ROOM_NAMES } from "./presetRooms";
+export {
+  FogSystem,
+  type FogZone,
+  type FogZoneType,
+  type FogSystemParams,
+  type FogState,
+  DEFAULT_FOG_SYSTEM_PARAMS,
+} from "./FogSystem";
+export { SCRIBE_HALL } from "./scribeHall";
+export { ARCHIVE_PASSAGE, DEMO_WORLD_DATA, createDemoWorld } from "./demoWorld";
+export { PlayerProgression, type PlayerProgressionData, type CardDeckData } from "./PlayerProgression";
+export { WorldGraph, type WorldRegion, type WorldGraphData } from "./WorldGraph";
+export { GameWorld, type GameWorldConfig, type WorldFrameState, type RoomTransitionResult } from "./GameWorld";

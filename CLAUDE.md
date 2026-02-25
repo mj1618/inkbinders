@@ -4,6 +4,10 @@
 
 Read `AGENTS.md` first for project overview, tech stack, and folder structure.
 
+## Dev Server
+
+- The dev server runs on **port 4000** (`npm run dev` → `http://localhost:4000`)
+
 ## Code Style
 
 - **TypeScript strict mode** — no `any` types unless absolutely necessary

@@ -69,10 +69,12 @@ inkbinders/
 ## Running the Project
 
 ```bash
-npm run dev      # Start Next.js dev server
+npm run dev      # Start Next.js dev server (port 4000)
 npm run build    # Production build
 npx tsc --noEmit # Type-check without emitting
 ```
+
+The dev server runs on **port 4000** (not the Next.js default of 3000).
 
 ## Where Things Live
 
@@ -213,15 +215,18 @@ Abilities live in `src/engine/abilities/`. They are **world-editing systems**, n
 | 2 | Index Eater (Boss) | Done |
 | 3 | Astral Atlas (biome) | Done |
 | 4 | Maritime Ledger (biome) | Done |
-| 5 | Gothic Errata (biome) | In progress |
+| 5 | Gothic Errata (biome) | Done |
 
 ### Phase 6 — Integration & Polish (In Progress)
 
 | Step | Feature | Status |
 |------|---------|--------|
-| 1 | Game World Assembly | In progress |
-| 2 | Asset Pipeline & Sprites | Not started |
-| 3 | Convex Save System | In progress |
+| 1 | Game World Assembly | Done |
+| 2 | Asset Pipeline & Sprites | In progress |
+| 3 | Convex Save System | Done |
+| 4 | HUD & Game UI | In progress |
+| 5 | Main Menu & Game Flow | In progress |
+| 6 | Herbarium Wing Rooms (content) | In progress |
 
 ### Boss Pattern
 Bosses follow the `FootnoteGiant` pattern in `src/engine/entities/bosses/`:
@@ -302,6 +307,22 @@ Bosses follow the `FootnoteGiant` pattern in `src/engine/entities/bosses/`:
 - **Particles**: `updateParticles()` spawns bubble/droplet particles inside visible zones, moving in current direction
 - Currents are world systems, NOT surface types — area-based force fields independent of platform contact
 - Wire in test page update: `currentSystem.updateGusts(dt)` → `currentSystem.applyToPlayer()` (after player.update, before resolveCollisions) → `currentSystem.updateParticles()`
+
+### FogSystem
+`FogSystem` class (`src/engine/world/FogSystem.ts`) — fog-of-war and input disruption zones for the Gothic Errata biome:
+- `FogZone` interface: id, rect, type (`"fog" | "inversion" | "scramble"`), density (0-1), active
+- `FogSystemParams` has all tunable values: baseFogRadius (200), minFogRadius (80), fogFadeInRate (0.08), fogFadeOutRate (0.15), dashClearsFog, dashClearDuration (15 frames), inversionAffectsDash, scrambleAffectsDash, inversionTintStrength (0.15), scrambleGlitchStrength (0.2), controlTransitionDelay (10 frames)
+- `update(playerBounds, isDashing)` → `FogState` with inFog, fogLevel, visibilityRadius, inverted, scrambled, dashClearing, activeZoneIds
+- **Fog zones**: Radial visibility mask centered on player. Canvas compositing: full-screen dark overlay + `destination-out` radial gradient hole. Radius shrinks with density: `baseFogRadius + (minFogRadius - baseFogRadius) * fogLevel`
+- **Inversion zones**: Swap Left ↔ Right input actions. Red tint on screen edges as visual indicator
+- **Scramble zones**: Fisher-Yates shuffle of [Left, Right, Up, Down] on zone entry. Mapping stays consistent within zone, re-randomizes on re-entry. Green glitch scanlines as indicator
+- **Input remapping**: Uses `InputManager.setActionRemap(Map)` — transparent layer that redirects `isHeld()/isPressed()/consumeBufferedInput()` queries. Player code is unmodified.
+- `getActiveRemap()` → `Map<string, string> | null` — call before `player.update()`, set via `input.setActionRemap()`, clear after
+- **Dash clears fog**: When `dashClearsFog=true`, dashing sets `dashClearTimer` which forces fogLevel to 0 temporarily
+- **Transition delay**: `controlTransitionDelay` frames of normal controls after entering an inversion/scramble zone (prevents mid-air control loss)
+- **Zone rendering**: `renderZoneBoundaries()` draws atmospheric borders (fog = purple glow + drifting particles, inversion = pulsing red + reversed arrows, scramble = jittering green + static dots). `renderFogOverlay()` and `renderControlEffects()` are screen-space overlays.
+- Inversion and scramble are mutually exclusive (inversion takes priority if overlapping)
+- FogSystem is a pure engine class — no React dependencies, no Player/TileMap modification
 
 ### BiomeBackground
 `BiomeBackground` class (`src/engine/world/BiomeBackground.ts`) — parallax background layers:
@@ -431,3 +452,234 @@ The `/test/save-load` page is a **React UI page** (not a canvas page):
 - When Convex IS connected: would use `useQuery`/`useMutation` from `convex/react`
 - Mock mode is the default since no Convex deployment exists yet
 - Banner shows connection status; all UI works identically in both modes
+
+### GameHUD System
+`GameHUD` class (`src/engine/ui/GameHUD.ts`) — unified in-game heads-up display:
+- **Pure engine class**: No React dependencies. Renders on a `CanvasRenderingContext2D` in screen-space.
+- **Null-safe**: All system references in `GameHUDSystems` can be null except `input`. HUD gracefully skips elements when systems are unavailable.
+- **`GameHUDConfig`**: Toggle individual HUD elements on/off: `showHealth`, `showAbilities`, `showWeapon`, `showClock`, `showRoomName`, `showMinimap`, `showNotifications`
+- **`GameHUDSystems`**: References to game systems: `health` (PlayerHealth), `combat` (CombatSystem), `marginStitch`, `redaction`, `pasteOver`, `indexMark`, `dayNight` (DayNightCycle), `input` (InputManager)
+- **Health bar**: Top-left (16, 12), 120x12px, red fill proportional to HP, white flash on damage (6 frames), red/orange pulse at 1 HP
+- **Ability bar**: Bottom-left, 4 slots (40x52px each, 4px spacing) with keybind label, canvas-drawn icon, cooldown sweep overlay, active count dots
+- **Weapon indicator**: Bottom-center, shows current weapon icon + name, `[K]` switch hint. Quill-spear = diagonal line with pointed tip, ink-snap = starburst
+- **Day/night clock**: Top-right, sun/moon icon + phase name + time + progress bar
+- **Room name display**: Bottom-right, fade-in (20f) → hold (120f) → fade-out (30f). Call `showRoomName(name)` on room transitions.
+- **Notifications**: Left side above ability bar, typed (info/ability/gate/item/warning) with colors/prefixes, FIFO queue (max 5), fade-in (10f) → hold (90f) → fade-out (20f)
+- **Pause menu**: `InputAction.Pause` (Escape key) toggles pause. Dark overlay (70% black), centered 200x120px menu with "Resume" / "Quit" options. Up/Down navigate, Jump/Attack confirm.
+- **Pause state management**: `hud.paused` boolean checked by game loop. `hud.checkPause()` toggles pause on ESC press. `hud.handlePauseInput()` returns `PauseAction` or null.
+- **Render order**: Call `hud.render()` in screen-space (after camera restore), then `hud.renderPauseMenu()` for pause overlay.
+- **InputAction.Pause**: Added to `InputManager.ts` — `Pause: "pause"`, bound to `Escape` key in `DEFAULT_KEY_MAP`.
+- Test page: `/test/hud` — sandbox with player, combat, abilities, day/night, spikes, dummies, full HUD. Debug panel toggles HUD elements, sends notifications, skips day/night phases.
+
+### Sprite System & Asset Pipeline
+`SpriteSheet` class (`src/engine/core/SpriteSheet.ts`) — sprite sheet loading, frame slicing, and rendering:
+- `SpriteSheetConfig`: id, src path, frameWidth, frameHeight, columns, totalFrames
+- `AnimationDef`: name, frame indices, fps, loop boolean
+- `load()` returns a promise; on failure the sheet remains unloaded (AssetManager provides placeholder)
+- `setImageSource(source)` accepts `CanvasImageSource` — used for placeholders
+- `getFrameRect(frameIndex)` returns `{sx, sy, sw, sh}` source rectangle
+- `drawFrame(ctx, frameIndex, x, y, flipX, scaleX, scaleY)` renders a single frame with optional flip and scale
+- Frame layout: left-to-right, top-to-bottom, 0-indexed
+
+`AnimationController` class (`src/engine/core/AnimationController.ts`) — animation playback:
+- `play(animName)` switches animation (no restart if already playing)
+- `restart(animName)` force-restarts from frame 0
+- `update(dt)` advances frame timing based on animation FPS
+- `setSpriteSheet(sheet)` swaps the underlying sheet (resets animation state)
+- `getCurrentFrameIndex()` returns the sprite sheet frame index for the current animation frame
+- `draw(ctx, x, y, flipX, scaleX, scaleY)` renders the current frame
+
+`AssetManager` singleton (`src/engine/core/AssetManager.ts`) — centralized asset loading/caching:
+- `getInstance()` returns the singleton
+- `loadSpriteSheet(config)` loads and caches; on image load failure, generates a canvas-based placeholder
+- `loadAll(configs)` loads multiple sheets in parallel
+- `getSpriteSheet(id)` retrieves cached sheet
+- `isRealAsset(id)` checks if the sheet loaded from its real image (not placeholder)
+- `createPlaceholder(config, color)` generates colored rectangle frames with frame numbers
+- Placeholder colors: player=#f472b6, tiles=#8b7355
+
+`PlayerSprites` (`src/engine/entities/PlayerSprites.ts`) — player sprite definitions:
+- `PLAYER_SPRITE_CONFIGS`: 3 sheets — player-idle (1 frame), player-run (4 frames), player-jump (3 frames), all 64×64
+- `PLAYER_ANIMATIONS`: animation defs keyed by sheet ID
+- `STATE_TO_ANIMATION`: maps player state machine states to `{sheetId, animName}` pairs
+- Many states fall back to idle/run — only idle, run, jump-rise, jump-fall have dedicated sprites initially
+
+Asset generation script (`scripts/generate-assets.ts`):
+- Uses `@google/genai` SDK with `NANOBANANA_API_KEY` from `.env.local`
+- Run: `npx tsx scripts/generate-assets.ts`
+- Generates 5 assets: player-idle, player-run-sheet, player-jump-sheet, tiles-scribe-hall, tiles-herbarium
+- Idempotent — skips existing files. Delete a file to regenerate.
+- Style prefix: "hand-inked 2D game art, clean linework, watercolor wash fill, paper grain texture"
+- Outputs to `public/assets/`
+- `@google/genai` and `dotenv` are dev/script dependencies only — never imported in `src/`
+
+Test page: `/test/sprites` — sprite rendering demo with rendering mode toggle (sprites/rectangles/both), animation strip preview, asset status indicators, FPS slider.
+
+### Main Menu & Game Flow
+Title screen (`/`), save slot selection, name entry, and the `/play` game page.
+
+**Title Screen** (`src/app/page.tsx`):
+- React page (not canvas game), with `InkWashBackground` decorative canvas (50 ink particles drifting upward)
+- Menu options: Continue (most recent save), New Game (opens slot select), Test Pages (`/test`)
+- Keyboard (Up/Down/Enter) and mouse navigation
+- `MenuScreen` states: `"main" | "slot-select" | "name-entry"`
+
+**Save Slot Select** (`src/components/SaveSlotSelect.tsx`):
+- Modal overlay showing 3 save slots
+- Props: `slots`, `mode: "new-game" | "load"`, `onSelect`, `onDelete`, `onBack`
+- Empty slots show "New Game" button; filled slots show Load/Overwrite/Delete
+- Inline confirmation dialogs for destructive actions
+
+**Name Entry** (`src/components/NameEntry.tsx`):
+- Modal with text input, default "Archivist", max 20 chars, alphanumeric + spaces
+- Props: `onConfirm(name)`, `onBack()`
+
+**useSaveSlots Hook** (`src/hooks/useSaveSlots.ts`):
+- Returns: `slots`, `isConnected`, `isLoading`, `save()`, `load()`, `deleteSave()`, `getMostRecentSlot()`, `refresh()`
+- Uses localStorage mock (Convex not deployed); keys: `inkbinders-saves`, `inkbinders-progression-{slot}`
+- `save()` persists both slot summary and full progression data
+- `load()` returns `LoadedGameState | null`
+
+**GameSession** (`src/engine/core/GameSession.ts`):
+- Pure TypeScript runtime orchestrator for an active game session
+- Constructor: `GameSessionConfig` with `slot`, `playerName`, `isNewGame`, `loadedState`
+- Tracks: abilities, gates, bosses, rooms, health, cards, play time, deaths
+- `getStartingRoomId()`, `getTotalPlayTime()`, `enterRoom()`, `unlockAbility()`, `hasAbility()`, `getUnlockedAbilities()`
+- `createSaveSnapshot()` → `GameSaveData` ready to persist
+- `DEV_ALL_ABILITIES = true` flag for development (all abilities unlocked)
+- New game defaults: `tutorial-corridor`, 5/5 HP, no cards, no bosses
+
+### Game World Assembly
+`PlayerProgression` class (`src/engine/world/PlayerProgression.ts`) — tracks player accomplishments:
+- `PlayerProgressionData`: unlocked abilities, opened gates, defeated bosses, visited rooms, card deck, health, room ID, play time, deaths
+- `CardDeckData`: owned + equipped card IDs
+- `unlockAbility()`, `hasAbility()`, `unlockAllAbilities()` — ability tracking
+- `openGate()`, `isGateOpened()` — gate persistence across room transitions
+- `defeatBoss()`, `visitRoom()`, `recordDeath()`, `updatePlayTime()`
+- `serialize()` / `deserialize()` — plain object conversion for future Convex persistence
+- For testing: `unlockAllAbilities()` gives all 4 abilities
+
+`WorldGraph` class (`src/engine/world/WorldGraph.ts`) — room layout and biome regions:
+- `WorldRegion`: id, name, biomeId, roomIds
+- `WorldGraphData`: regions, startingRoomId, hubRoomId
+- `getRegion(roomId)`, `getRoomsInRegion(regionId)`, `getAdjacentRooms(roomId)`, `getBiomeId(roomId)`
+- `isHub(roomId)` — checks if room is the hub (Scribe Hall)
+
+`GameWorld` class (`src/engine/world/GameWorld.ts`) — top-level world orchestrator:
+- Wraps `RoomManager`, `DayNightCycle`, `PlayerProgression`
+- `GameWorldConfig`: worldGraph, dayNightParams, allAbilitiesUnlocked flag
+- `update(dt, playerBounds)` → `WorldFrameState` (timeOfDay, lightLevel, corruptionIntensity, atmosphereColors, transitioning, theme, isHub)
+- `transitionToRoom(exit)` — triggers fade-to-black room transition
+- `tryOpenGate(gateId)` — checks abilities and opens gate, persists to progression
+- Hub immunity: corruption intensity forced to 0 when in hub room
+- `resolveTheme()` uses `getBiomeTheme()` to look up biome colors
+
+**Scribe Hall** (`src/engine/world/scribeHall.ts`) — 1920×1080 hub room:
+- Warm parchment theme (`SCRIBE_HALL_THEME` in Biome.ts)
+- No enemies, no obstacles, no gates
+- Exits: left → Tutorial Corridor, right → Archive Passage
+- Bookshelves, mezzanines, reading nook, desk platform
+- Always safe — corruption suppressed in hub
+
+**Demo World** (`src/engine/world/demoWorld.ts`) — 5-room playable world:
+- `ARCHIVE_PASSAGE`: 960×540 connector room (1 Reader enemy)
+- `DEMO_WORLD_DATA`: 3 regions (Hub, Herbarium Wing, Central Archives)
+- `createDemoWorld()` factory → `{ worldGraph, rooms }` ready for GameWorld
+- Room connections: Scribe Hall ↔ Tutorial Corridor ↔ Vertical Shaft ↔ Vine Garden, Scribe Hall ↔ Archive Passage ↔ Vertical Shaft
+
+**Biome Theme Registry** (`getBiomeTheme()` in Biome.ts):
+- `DEFAULT_THEME` (neutral gray), `SCRIBE_HALL_THEME` (warm brown/gold)
+- All biome themes registered: default, scribe-hall, herbarium-folio, astral-atlas, maritime-ledger, gothic-errata
+- `getBiomeTheme(biomeId)` → `BiomeTheme` lookup with fallback to DEFAULT_THEME
+
+**Test page** (`/test/world-assembly`):
+- Full integrated world demo: player starts in Scribe Hall, explores 5 connected rooms
+- Day/night cycle runs globally, corruption applies in non-hub rooms
+- Enemies spawn per room, gates auto-open on proximity
+- Minimap renders room graph with player dot
+- Debug panel: world state, day/night controls, HUD config, room map
+- 15 pass criteria for verification
+
+**Play Page** (`src/app/play/page.tsx`):
+- Route: `/play?slot=N` (load save) or `/play?slot=N&new=1` (new game)
+- Redirects to `/` if no valid slot param
+- Flow: load save → create GameSession → init engine → mount canvas → start game loop
+- Uses `PRESET_ROOMS` from `presetRooms.ts` (tutorial-corridor, vertical-shaft, vine-garden)
+- `RoomManager` handles room loading, exit detection, fade transitions
+- Full systems: combat, all 4 abilities, day/night, HUD, particles, screen shake
+- Custom 4-option pause menu: Resume, Save Game, Save & Quit, Quit (with confirmation)
+- Auto-save on room transition
+- Auto-open gates when player has required ability
+- Fall-off respawn with 1 damage + death counter
+- Loading screen with minimum 500ms display
+
+### Room Content — Herbarium Wing
+`src/engine/world/herbariumRooms.ts` — 8 interconnected rooms forming the first explorable biome region:
+
+**Room definition pattern:**
+- Each room is a `RoomData` constant with platforms, obstacles, exits, gates, enemies, and vine anchors
+- Room IDs are kebab-case (e.g., `"vine-vestibule"`)
+- Display names are title case (e.g., `"Vine Vestibule"`)
+- All rooms use `biomeId: "herbarium-folio"`
+- Exits are bidirectional — every exit has a corresponding return exit in the target room
+- `EXIT_ZONE_DEPTH` (16px) from `Room.ts` defines exit trigger zone thickness
+
+**Layout (two branching paths converging at mini-boss):**
+```
+Tutorial Corridor → Vine Vestibule → Overgrown Stacks → Canopy Walk → Thorn Gallery ─┐
+                                   → Root Cellar → Mushroom Grotto → Spore Chamber ──┤
+                                                                         Herbarium Heart ←┘
+```
+
+**Room catalog:**
+| Room | Size | Vines | Enemies | Gates | Focus |
+|------|------|-------|---------|-------|-------|
+| Vine Vestibule | 960×1080 | 3 | none | none | Vine tutorial |
+| Overgrown Stacks | 1920×1080 | 5 | 2 Reader | none | Vine chaining over spike pit |
+| Root Cellar | 960×1080 | 1 | 1 Binder | Margin Stitch | Underground ability puzzle |
+| Canopy Walk | 1920×540 | 6 | 1 Reader, 1 Proofwarden | none | 6-vine chain gauntlet |
+| Mushroom Grotto | 1440×1080 | 2 | 2 Reader, 1 Binder | Paste-Over | Surface types (bouncy/icy/sticky) |
+| Thorn Gallery | 960×1080 | 2 | 3 Reader, 1 Binder, 1 PW | Redaction | Vertical combat arena |
+| Spore Chamber | 960×1080 | 1 | 1 Proofwarden | Margin Stitch + Redaction | Ability puzzle |
+| Herbarium Heart | 1440×1080 | 4 | Elder Binder | none | Mini-boss arena |
+
+**Elder Binder (mini-boss):**
+- NOT a new class — uses `Binder` with `ELDER_BINDER_PARAMS` override
+- 15 HP (3× normal), 200px thread range, 2 contact/thread damage, faster attacks
+- Spawned by `createEnemiesForRoom()` checking for `id === "hh_elder_binder"`
+
+**Test page pattern** (`/test/herbarium-wing`):
+- Standalone experience using `RoomManager` with all preset + herbarium rooms
+- `loadRoomSystems()` called on each room transition: creates VineSystem, enemies, updates camera bounds
+- All abilities unlocked (gates auto-open on proximity)
+- Combat system with weapon switching (J = attack, K = switch)
+- Debug panel: world state, room map, player/vine param sliders
+- Pass criteria tracked automatically (vine chaining, gate opens, transitions, etc.)
+
+### Headless Test Harness
+`src/engine/test/` — headless game testing framework using vitest:
+- **`GameTestHarness`** (`GameTestHarness.ts`): Core testing class that runs the engine without a browser or canvas. Creates Player, TileMap, TestInputManager, Camera. No rendering, no DOM.
+- **`TestInputManager`** (`TestInputManager.ts`): Extends `InputManager` with programmatic `press(action)`, `release(action)`, `releaseAll()` methods. Never attaches DOM listeners.
+- **Run tests**: `npm test` (watch mode) or `npm run test:run` (single run)
+- **Config**: `vitest.config.ts` at project root, uses `vite-tsconfig-paths` for `@/*` alias
+
+**Harness API:**
+- **Setup**: `new GameTestHarness({ platforms, playerParams })`, `addPlatform()`, `addFloor()`, `addWalls()`, `setPlayerPosition()`, `setPlayerVelocity()`
+- **Simulation**: `tick()` (1 frame), `tickN(n)`, `tickUntil(predicate, maxFrames)`, `tickWhile(predicate, maxFrames)`, `tickSeconds(seconds)`
+- **Input**: `pressJump()`, `pressLeft()`, `pressRight()`, `pressDash()`, `pressAttack()`, `pressUp()`, `pressDown()`, `pressCrouch()`, `releaseAll()`, `releaseJump()`, etc.
+- **Inspection**: `pos`, `vel`, `state`, `grounded`, `facingRight`, `speed`, `horizontalSpeed`, `snapshot()`
+- **Optional systems**: `enableCombat(params?)`, `enableHealth(params?)`
+- **`tick()` cycle**: `input.update()` → surface detection → `player.update(dt)` (state machine + gravity + velocity + position + collision) → combat update → camera follow
+
+**Example test:**
+```typescript
+const h = new GameTestHarness({ platforms: [{ x: 0, y: 300, width: 960, height: 32 }] });
+h.setPlayerPosition(100, 260);
+h.tickUntil(() => h.grounded, 60);
+h.pressJump();
+h.tick();
+expect(h.state).toBe('JUMPING');
+expect(h.vel.y).toBeLessThan(0);
+```
+
+**Test files**: `src/engine/test/__tests__/` — movement, jumping, dash, wall mechanics examples

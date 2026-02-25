@@ -3,8 +3,10 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Slider } from "@/components/debug/Slider";
 import { Engine } from "@/engine/core/Engine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import type { PlayerParams } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
@@ -225,6 +227,7 @@ export default function EnemiesTest() {
   // ─── Engine Mount ──────────────────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     engineRef.current = engine;
 
@@ -786,6 +789,7 @@ export default function EnemiesTest() {
 
       {/* Debug Panel */}
       <DebugPanel title="Enemies">
+        <RenderModeToggle />
         {/* Combat Info */}
         <div>
           <button

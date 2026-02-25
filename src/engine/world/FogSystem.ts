@@ -1,21 +1,23 @@
-// FogSystem — zone-based fog-of-war, input inversion, and input scramble
-// for the Gothic Errata biome. Purely spatial effects (not time-based like Day/Night).
+// FogSystem — fog-of-war zones and input inversion/scramble for Gothic Errata biome
 
 import type { Rect } from "@/lib/types";
-import { InputAction } from "@/engine/input/InputManager";
-import type { InputManager } from "@/engine/input/InputManager";
 import { aabbOverlap } from "@/engine/physics/AABB";
+import { InputAction } from "@/engine/input/InputManager";
 
-// ─── Types ──────────────────────────────────────────────────────────
+// ─── Fog Zone Types ──────────────────────────────────────────────────
+
+export type FogZoneType = "fog" | "inversion" | "scramble";
 
 export interface FogZone {
   id: string;
   rect: Rect;
-  type: "fog" | "inversion" | "scramble";
-  /** Fog density 0-1 (only used for "fog" type). Higher = less visibility. */
+  type: FogZoneType;
+  /** Fog density (0-1). Higher = less visibility. Only meaningful for "fog" type. */
   density: number;
   active: boolean;
 }
+
+// ─── Params ──────────────────────────────────────────────────────────
 
 export interface FogSystemParams {
   baseFogRadius: number;
@@ -45,6 +47,8 @@ export const DEFAULT_FOG_SYSTEM_PARAMS: FogSystemParams = {
   controlTransitionDelay: 10,
 };
 
+// ─── Fog State ───────────────────────────────────────────────────────
+
 export interface FogState {
   inFog: boolean;
   fogLevel: number;
@@ -55,266 +59,210 @@ export interface FogState {
   activeZoneIds: string[];
 }
 
-// ─── Directional actions for scramble remapping ─────────────────────
+// ─── Boundary Particle ──────────────────────────────────────────────
 
-const DIRECTIONAL_ACTIONS: string[] = [
-  InputAction.Left,
-  InputAction.Right,
-  InputAction.Up,
-  InputAction.Down,
-];
-
-// ─── Fisher-Yates shuffle with seed ─────────────────────────────────
-
-function seededShuffle(arr: string[], seed: number): string[] {
-  const result = [...arr];
-  let s = seed;
-  const rng = () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+interface BoundaryParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+  color: string;
 }
 
-/** Simple hash of a string to a number */
-function hashString(str: string): number {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-// ─── FogSystem Class ────────────────────────────────────────────────
+// ─── FogSystem ───────────────────────────────────────────────────────
 
 export class FogSystem {
   zones: FogZone[];
   params: FogSystemParams;
 
-  // Smoothed fog level (0 = clear, 1 = max fog)
   private currentFogLevel = 0;
-  // Max fog density of overlapping fog zones
-  private targetFogDensity = 0;
-
-  // Control modification state
+  private currentMaxDensity = 0;
   private currentInversion = false;
   private currentScramble = false;
   private scrambleMap: Map<string, string> = new Map();
-
-  // Grace period counter (frames since entering a control zone)
   private transitionTimer = 0;
-  // Whether we're in the grace period (controls still normal)
-  private inGracePeriod = false;
-
-  // Dash-clear timer
   private dashClearTimer = 0;
 
-  // Track which control zone we're in (to detect re-entry)
-  private lastControlZoneId: string | null = null;
+  private prevInZoneType: FogZoneType | null = null;
+  private lastScrambleZoneId: string | null = null;
 
-  // Random seed offset that changes on each zone re-entry (for scramble variation)
-  private scrambleSessionSeed = 0;
+  private lastIsDashing = false;
 
-  // Active zone IDs for debug display
-  private activeZoneIds: string[] = [];
-
-  // Glitch effect frame counter
-  private glitchFrame = 0;
+  private boundaryParticles: BoundaryParticle[] = [];
+  private frameCount = 0;
 
   constructor(zones: FogZone[], params?: Partial<FogSystemParams>) {
     this.zones = zones;
     this.params = { ...DEFAULT_FOG_SYSTEM_PARAMS, ...params };
   }
 
-  /**
-   * Update fog state based on player position.
-   * Call each frame before player.update().
-   */
   update(playerBounds: Rect, isDashing: boolean): FogState {
-    this.glitchFrame++;
+    this.frameCount++;
+    this.lastIsDashing = isDashing;
 
-    // Find overlapping zones
-    const overlapping: FogZone[] = [];
-    for (const zone of this.zones) {
-      if (!zone.active) continue;
-      if (aabbOverlap(playerBounds, zone.rect)) {
-        overlapping.push(zone);
-      }
+    const overlapping = this.zones.filter(
+      (z) => z.active && aabbOverlap(playerBounds, z.rect),
+    );
+
+    const activeZoneIds = overlapping.map((z) => z.id);
+
+    // Fog level
+    const fogZones = overlapping.filter((z) => z.type === "fog");
+    const inFog = fogZones.length > 0;
+    this.currentMaxDensity = inFog
+      ? Math.max(...fogZones.map((z) => z.density))
+      : 0;
+
+    if (inFog) {
+      this.currentFogLevel = Math.min(
+        this.currentMaxDensity,
+        this.currentFogLevel + this.params.fogFadeInRate,
+      );
+    } else {
+      this.currentFogLevel = Math.max(
+        0,
+        this.currentFogLevel - this.params.fogFadeOutRate,
+      );
     }
 
-    this.activeZoneIds = overlapping.map((z) => z.id);
-
-    // --- Fog level ---
-    let maxDensity = 0;
-    for (const zone of overlapping) {
-      if (zone.type === "fog" && zone.density > maxDensity) {
-        maxDensity = zone.density;
-      }
-    }
-    this.targetFogDensity = maxDensity;
-
-    // Dash clear logic
-    if (isDashing && this.params.dashClearsFog && maxDensity > 0) {
+    // Dash clear
+    if (isDashing && this.params.dashClearsFog && this.currentFogLevel > 0) {
       this.dashClearTimer = this.params.dashClearDuration;
     }
     if (this.dashClearTimer > 0) {
       this.dashClearTimer--;
     }
 
-    // Smooth fog level
-    const targetLevel = this.dashClearTimer > 0 ? 0 : maxDensity;
-    if (this.currentFogLevel < targetLevel) {
-      this.currentFogLevel = Math.min(
-        targetLevel,
-        this.currentFogLevel + this.params.fogFadeInRate,
-      );
-    } else if (this.currentFogLevel > targetLevel) {
-      this.currentFogLevel = Math.max(
-        targetLevel,
-        this.currentFogLevel - this.params.fogFadeOutRate,
-      );
-    }
+    // Control modification zones
+    const inversionZone = overlapping.find((z) => z.type === "inversion");
+    const scrambleZone = overlapping.find((z) => z.type === "scramble");
 
-    // --- Control modification ---
-    // Find the first inversion or scramble zone we overlap
-    let controlZone: FogZone | null = null;
-    for (const zone of overlapping) {
-      if (zone.type === "inversion") {
-        controlZone = zone;
-        break; // Inversion takes priority
-      }
-      if (zone.type === "scramble" && !controlZone) {
-        controlZone = zone;
+    const controlZoneType = inversionZone
+      ? "inversion"
+      : scrambleZone
+        ? "scramble"
+        : null;
+
+    // Transition delay on zone entry
+    if (controlZoneType !== this.prevInZoneType) {
+      this.transitionTimer = this.params.controlTransitionDelay;
+      this.prevInZoneType = controlZoneType as FogZoneType | null;
+
+      if (scrambleZone && scrambleZone.id !== this.lastScrambleZoneId) {
+        this.generateScrambleMap(scrambleZone.id);
+        this.lastScrambleZoneId = scrambleZone.id;
       }
     }
 
-    if (controlZone) {
-      // Detect zone change (new entry or different zone)
-      if (this.lastControlZoneId !== controlZone.id) {
-        this.lastControlZoneId = controlZone.id;
-        this.transitionTimer = 0;
-        this.inGracePeriod = true;
-
-        // Generate new scramble map on zone entry
-        if (controlZone.type === "scramble") {
-          this.scrambleSessionSeed++;
-          const seed = hashString(controlZone.id) + this.scrambleSessionSeed;
-          const shuffled = seededShuffle(DIRECTIONAL_ACTIONS, seed);
-          this.scrambleMap.clear();
-          for (let i = 0; i < DIRECTIONAL_ACTIONS.length; i++) {
-            if (DIRECTIONAL_ACTIONS[i] !== shuffled[i]) {
-              this.scrambleMap.set(DIRECTIONAL_ACTIONS[i], shuffled[i]);
-            }
-          }
-        }
-      }
-
-      // Advance grace period
-      if (this.inGracePeriod) {
-        this.transitionTimer++;
-        if (this.transitionTimer >= this.params.controlTransitionDelay) {
-          this.inGracePeriod = false;
-        }
-      }
-
-      if (!this.inGracePeriod) {
-        this.currentInversion = controlZone.type === "inversion";
-        this.currentScramble = controlZone.type === "scramble";
-      } else {
-        this.currentInversion = false;
-        this.currentScramble = false;
-      }
-    } else {
-      // Not in any control zone
-      this.currentInversion = false;
-      this.currentScramble = false;
-      this.lastControlZoneId = null;
-      this.inGracePeriod = false;
-      this.transitionTimer = 0;
+    if (this.transitionTimer > 0) {
+      this.transitionTimer--;
     }
+
+    const delayExpired = this.transitionTimer <= 0;
+
+    this.currentInversion = !!inversionZone && delayExpired;
+    this.currentScramble =
+      !this.currentInversion && !!scrambleZone && delayExpired;
+
+    // Clear scramble tracking when exiting scramble zones
+    if (!scrambleZone) {
+      this.lastScrambleZoneId = null;
+    }
+
+    // Update boundary particles
+    this.updateBoundaryParticles();
+
+    const dashClearing = this.dashClearTimer > 0;
+    const effectiveFogLevel = dashClearing ? 0 : this.currentFogLevel;
 
     return {
-      inFog: this.currentFogLevel > 0.01,
-      fogLevel: this.currentFogLevel,
+      inFog,
+      fogLevel: effectiveFogLevel,
       visibilityRadius: this.getVisibilityRadius(),
       inverted: this.currentInversion,
       scrambled: this.currentScramble,
-      dashClearing: this.dashClearTimer > 0,
-      activeZoneIds: this.activeZoneIds,
+      dashClearing,
+      activeZoneIds,
     };
   }
 
-  /** Get current effective visibility radius in pixels. Infinity if not in fog. */
   getVisibilityRadius(): number {
-    if (this.currentFogLevel <= 0.01) return Infinity;
     if (this.dashClearTimer > 0) return Infinity;
-    const range = this.params.baseFogRadius - this.params.minFogRadius;
-    return this.params.baseFogRadius - range * this.currentFogLevel;
+    if (this.currentFogLevel <= 0) return Infinity;
+
+    const t = this.currentFogLevel;
+    return (
+      this.params.baseFogRadius +
+      (this.params.minFogRadius - this.params.baseFogRadius) * t
+    );
   }
 
-  /** Check if horizontal controls are currently inverted */
+  remapAction(action: string): string {
+    if (this.currentInversion) {
+      if (action === InputAction.Left) return InputAction.Right;
+      if (action === InputAction.Right) return InputAction.Left;
+      return action;
+    }
+    if (this.currentScramble) {
+      return this.scrambleMap.get(action) ?? action;
+    }
+    return action;
+  }
+
   isInverted(): boolean {
     return this.currentInversion;
   }
 
-  /** Check if controls are currently scrambled */
   isScrambled(): boolean {
     return this.currentScramble;
   }
 
-  /** Get a copy of the current scramble mapping for debug display */
-  getScrambleMap(): Map<string, string> {
-    return new Map(this.scrambleMap);
-  }
+  /** Build the InputManager remap based on current control modification.
+   *  When the player is dashing and the relevant immunity toggle is off,
+   *  directional remaps are suppressed so dash direction uses raw input. */
+  getActiveRemap(): Map<string, string> | null {
+    if (!this.currentInversion && !this.currentScramble) return null;
 
-  /** Get the current fog level (0-1) */
-  getFogLevel(): number {
-    return this.currentFogLevel;
-  }
-
-  /**
-   * Apply the current input remap to an InputManager.
-   * Call BEFORE player.update().
-   */
-  applyInputOverride(inputManager: InputManager): void {
     if (this.currentInversion) {
+      if (this.lastIsDashing && !this.params.inversionAffectsDash) return null;
       const remap = new Map<string, string>();
       remap.set(InputAction.Left, InputAction.Right);
       remap.set(InputAction.Right, InputAction.Left);
-      // Optionally affect dash direction
-      if (this.params.inversionAffectsDash) {
-        remap.set(InputAction.Dash, InputAction.Dash); // no-op but keeps structure
-      }
-      inputManager.setActionRemap(remap);
-    } else if (this.currentScramble) {
-      const remap = new Map<string, string>(this.scrambleMap);
-      // If scramble doesn't affect dash, ensure dash passes through
-      if (!this.params.scrambleAffectsDash) {
-        remap.delete(InputAction.Dash);
-      }
-      inputManager.setActionRemap(remap.size > 0 ? remap : null);
-    } else {
-      inputManager.setActionRemap(null);
+      return remap;
     }
+
+    if (this.currentScramble) {
+      if (this.lastIsDashing && !this.params.scrambleAffectsDash) return null;
+      const remap = new Map<string, string>();
+      for (const [from, to] of this.scrambleMap) {
+        remap.set(from, to);
+      }
+      return remap;
+    }
+
+    return null;
   }
 
-  /**
-   * Clear the input remap on an InputManager.
-   * Call AFTER player.update().
-   */
-  restoreInputOverride(inputManager: InputManager): void {
-    inputManager.setActionRemap(null);
+  getScrambleMapDisplay(): string[] {
+    if (!this.currentScramble) return [];
+    const labels: Record<string, string> = {
+      [InputAction.Left]: "Left",
+      [InputAction.Right]: "Right",
+      [InputAction.Up]: "Up",
+      [InputAction.Down]: "Down",
+    };
+    const result: string[] = [];
+    for (const [from, to] of this.scrambleMap) {
+      result.push(`${labels[from] ?? from} → ${labels[to] ?? to}`);
+    }
+    return result;
   }
 
-  /**
-   * Render fog overlay on the canvas (screen-space).
-   * Draws a dark overlay with a radial gradient hole at the player position.
-   * Call AFTER all world rendering, BEFORE HUD rendering.
-   */
+  // ─── Rendering ─────────────────────────────────────────────────
+
   renderFogOverlay(
     ctx: CanvasRenderingContext2D,
     playerScreenX: number,
@@ -322,23 +270,25 @@ export class FogSystem {
     canvasWidth: number,
     canvasHeight: number,
   ): void {
-    if (this.currentFogLevel <= 0.01) return;
+    const fogLevel = this.dashClearTimer > 0 ? 0 : this.currentFogLevel;
+    if (fogLevel <= 0) return;
 
     const radius = this.getVisibilityRadius();
     if (radius === Infinity) return;
 
     ctx.save();
-
-    // Draw full-screen dark overlay
     ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = `rgba(13, 10, 10, ${this.currentFogLevel * 0.92})`;
+    ctx.fillStyle = `rgba(13, 10, 10, ${fogLevel * 0.92})`;
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-    // Cut out a radial gradient hole at the player position
     ctx.globalCompositeOperation = "destination-out";
     const gradient = ctx.createRadialGradient(
-      playerScreenX, playerScreenY, radius * 0.3,
-      playerScreenX, playerScreenY, radius,
+      playerScreenX,
+      playerScreenY,
+      radius * 0.3,
+      playerScreenX,
+      playerScreenY,
+      radius,
     );
     gradient.addColorStop(0, "rgba(0, 0, 0, 1)");
     gradient.addColorStop(0.7, "rgba(0, 0, 0, 0.8)");
@@ -349,194 +299,357 @@ export class FogSystem {
     ctx.restore();
   }
 
-  /**
-   * Render control modification screen effects (screen-space).
-   * - Inversion: subtle red tint on screen edges
-   * - Scramble: brief green glitch lines at random positions
-   */
   renderControlEffects(
     ctx: CanvasRenderingContext2D,
     canvasWidth: number,
     canvasHeight: number,
   ): void {
     if (this.currentInversion) {
-      const strength = this.params.inversionTintStrength;
+      const alpha = this.params.inversionTintStrength;
       ctx.save();
-      // Red vignette on edges
-      const grad = ctx.createRadialGradient(
-        canvasWidth / 2, canvasHeight / 2, Math.min(canvasWidth, canvasHeight) * 0.35,
-        canvasWidth / 2, canvasHeight / 2, Math.max(canvasWidth, canvasHeight) * 0.7,
+
+      // Red tint on left and right edges
+      const edgeWidth = 60;
+      const gradientL = ctx.createLinearGradient(0, 0, edgeWidth, 0);
+      gradientL.addColorStop(0, `rgba(220, 38, 38, ${alpha})`);
+      gradientL.addColorStop(1, "rgba(220, 38, 38, 0)");
+      ctx.fillStyle = gradientL;
+      ctx.fillRect(0, 0, edgeWidth, canvasHeight);
+
+      const gradientR = ctx.createLinearGradient(
+        canvasWidth,
+        0,
+        canvasWidth - edgeWidth,
+        0,
       );
-      grad.addColorStop(0, "rgba(220, 38, 38, 0)");
-      grad.addColorStop(1, `rgba(220, 38, 38, ${strength})`);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+      gradientR.addColorStop(0, `rgba(220, 38, 38, ${alpha})`);
+      gradientR.addColorStop(1, "rgba(220, 38, 38, 0)");
+      ctx.fillStyle = gradientR;
+      ctx.fillRect(canvasWidth - edgeWidth, 0, edgeWidth, canvasHeight);
+
+      // Mirrored arrows hint
+      ctx.globalAlpha = alpha * 0.5;
+      ctx.fillStyle = "#dc2626";
+      ctx.font = "16px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("⟵ ⟶ INVERTED ⟵ ⟶", canvasWidth / 2, 20);
+      ctx.textAlign = "left";
+
       ctx.restore();
     }
 
     if (this.currentScramble) {
-      const strength = this.params.scrambleGlitchStrength;
+      const alpha = this.params.scrambleGlitchStrength;
       ctx.save();
-      ctx.globalAlpha = strength;
 
-      // Green glitch lines at pseudo-random positions (change each frame)
-      const lineCount = 3 + (this.glitchFrame % 3);
-      for (let i = 0; i < lineCount; i++) {
-        // Pseudo-random based on frame + index
-        const seed = this.glitchFrame * 7 + i * 31;
-        const y = ((seed * 16807) % 2147483647) / 2147483647 * canvasHeight;
-        const x = ((seed * 48271) % 2147483647) / 2147483647 * canvasWidth * 0.5;
-        const w = 50 + ((seed * 69621) % 2147483647) / 2147483647 * 200;
-
-        ctx.fillStyle = "#4ade80";
-        ctx.fillRect(x, y, w, 1 + (i % 2));
-      }
-
-      // Subtle green tint on edges
-      const grad = ctx.createRadialGradient(
-        canvasWidth / 2, canvasHeight / 2, Math.min(canvasWidth, canvasHeight) * 0.4,
-        canvasWidth / 2, canvasHeight / 2, Math.max(canvasWidth, canvasHeight) * 0.7,
-      );
-      grad.addColorStop(0, "rgba(74, 222, 128, 0)");
-      grad.addColorStop(1, `rgba(74, 222, 128, ${strength * 0.4})`);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-      ctx.restore();
-    }
-  }
-
-  /**
-   * Render debug overlay: zone outlines and labels.
-   * Call in world-space (camera transform applied).
-   */
-  renderDebug(ctx: CanvasRenderingContext2D): void {
-    for (const zone of this.zones) {
-      if (!zone.active) continue;
-
-      let color: string;
-      switch (zone.type) {
-        case "fog":
-          color = "#a855f7";
-          break;
-        case "inversion":
-          color = "#dc2626";
-          break;
-        case "scramble":
-          color = "#4ade80";
-          break;
-      }
-
-      ctx.save();
-      ctx.strokeStyle = color;
+      // Green glitch lines at random positions
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = "#4ade80";
       ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.globalAlpha = 0.6;
-      ctx.strokeRect(zone.rect.x, zone.rect.y, zone.rect.width, zone.rect.height);
-      ctx.setLineDash([]);
+      const lineCount = 3 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < lineCount; i++) {
+        const lx = Math.random() * canvasWidth;
+        const ly = Math.random() * canvasHeight;
+        const lw = 20 + Math.random() * 80;
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(lx + lw, ly);
+        ctx.stroke();
+      }
+
+      // Scanline distortion hint
+      for (let y = 0; y < canvasHeight; y += 4) {
+        if (Math.random() < 0.03) {
+          ctx.globalAlpha = alpha * 0.3;
+          ctx.fillStyle = "#4ade80";
+          ctx.fillRect(0, y, canvasWidth, 1);
+        }
+      }
 
       // Label
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = color;
-      ctx.font = "11px monospace";
-      const label = `${zone.type.toUpperCase()} (${zone.id})${zone.type === "fog" ? ` d=${zone.density}` : ""}`;
-      ctx.fillText(label, zone.rect.x + 4, zone.rect.y + 14);
+      ctx.globalAlpha = alpha * 0.5;
+      ctx.fillStyle = "#4ade80";
+      ctx.font = "16px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("◈ SCRAMBLED ◈", canvasWidth / 2, 20);
+      ctx.textAlign = "left";
+
       ctx.restore();
     }
   }
 
-  /**
-   * Render fog zone boundaries as in-world visuals (always visible).
-   * Call in world-space (camera transform applied).
-   */
-  renderZoneBoundaries(ctx: CanvasRenderingContext2D): void {
-    const time = this.glitchFrame;
+  renderZoneBoundaries(
+    ctx: CanvasRenderingContext2D,
+    cameraX: number,
+    cameraY: number,
+    canvasWidth: number,
+    canvasHeight: number,
+  ): void {
+    const viewLeft = cameraX;
+    const viewRight = cameraX + canvasWidth;
+    const viewTop = cameraY;
+    const viewBottom = cameraY + canvasHeight;
 
     for (const zone of this.zones) {
       if (!zone.active) continue;
 
-      const { x, y, width, height } = zone.rect;
+      const r = zone.rect;
+      if (
+        r.x + r.width < viewLeft ||
+        r.x > viewRight ||
+        r.y + r.height < viewTop ||
+        r.y > viewBottom
+      ) {
+        continue;
+      }
 
       ctx.save();
 
       if (zone.type === "fog") {
-        // Purple edge glow + drifting particles
-        ctx.globalAlpha = 0.15;
-        ctx.strokeStyle = "#a855f7";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, width, height);
+        // Purple edge glow
+        ctx.strokeStyle = "rgba(168, 85, 247, 0.15)";
+        ctx.lineWidth = 4;
+        ctx.setLineDash([8, 12]);
+        ctx.strokeRect(r.x, r.y, r.width, r.height);
+        ctx.setLineDash([]);
 
-        // Drifting particles along edges
-        ctx.globalAlpha = 0.3;
-        ctx.fillStyle = "#78716c";
-        const particleCount = Math.floor((width + height) / 60);
-        for (let i = 0; i < particleCount; i++) {
-          const t = (time * 0.02 + i * 0.37) % 1;
-          const edge = i % 4;
-          let px: number, py: number;
-          switch (edge) {
-            case 0: px = x + t * width; py = y + Math.sin(time * 0.05 + i) * 6; break;
-            case 1: px = x + width + Math.sin(time * 0.05 + i) * 6; py = y + t * height; break;
-            case 2: px = x + t * width; py = y + height + Math.sin(time * 0.05 + i) * 6; break;
-            default: px = x + Math.sin(time * 0.05 + i) * 6; py = y + t * height; break;
-          }
-          ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
-        }
+        // Inner glow
+        ctx.strokeStyle = "rgba(168, 85, 247, 0.06)";
+        ctx.lineWidth = 12;
+        ctx.strokeRect(r.x + 6, r.y + 6, r.width - 12, r.height - 12);
       } else if (zone.type === "inversion") {
-        // Red pulsing boundary
-        const pulse = 0.12 + Math.sin(time * 0.08) * 0.05;
-        ctx.globalAlpha = pulse;
-        ctx.strokeStyle = "#dc2626";
+        // Pulsing red boundary
+        const pulse = 0.1 + 0.05 * Math.sin(this.frameCount * 0.1);
+        ctx.strokeStyle = `rgba(220, 38, 38, ${pulse})`;
         ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, width, height);
+        ctx.strokeRect(r.x, r.y, r.width, r.height);
 
-        // Small arrow particles pointing wrong direction
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = "#dc2626";
-        const arrowCount = Math.floor((width + height) / 100);
-        for (let i = 0; i < arrowCount; i++) {
-          const t = (time * 0.015 + i * 0.41) % 1;
-          const edge = i % 2;
-          const px = edge === 0 ? x : x + width;
-          const py = y + t * height;
-          // Arrow pointing inward (wrong direction)
-          const dir = edge === 0 ? 1 : -1;
-          ctx.beginPath();
-          ctx.moveTo(px + dir * 8, py);
-          ctx.lineTo(px, py - 3);
-          ctx.lineTo(px, py + 3);
-          ctx.closePath();
-          ctx.fill();
+        // Inner red glow
+        ctx.strokeStyle = `rgba(220, 38, 38, ${pulse * 0.3})`;
+        ctx.lineWidth = 10;
+        ctx.strokeRect(r.x + 5, r.y + 5, r.width - 10, r.height - 10);
+
+        // Small reversed arrows along boundary
+        ctx.fillStyle = `rgba(220, 38, 38, ${pulse * 2})`;
+        ctx.font = "10px monospace";
+        const step = 80;
+        for (let x = r.x + 20; x < r.x + r.width - 20; x += step) {
+          ctx.fillText("⟵⟶", x, r.y - 4);
+          ctx.fillText("⟵⟶", x, r.y + r.height + 10);
         }
-      } else {
-        // Green flickering boundary (jittery position)
-        const jitterX = (Math.sin(time * 0.3) * 2) | 0;
-        const jitterY = (Math.cos(time * 0.25) * 2) | 0;
-        ctx.globalAlpha = 0.12 + (time % 3 === 0 ? 0.05 : 0);
-        ctx.strokeStyle = "#4ade80";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x + jitterX, y + jitterY, width, height);
+      } else if (zone.type === "scramble") {
+        // Jittering green boundary
+        const jx = (Math.random() - 0.5) * 2;
+        const jy = (Math.random() - 0.5) * 2;
+        ctx.strokeStyle = "rgba(74, 222, 128, 0.12)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(r.x + jx, r.y + jy, r.width, r.height);
 
-        // Static particles
-        ctx.globalAlpha = 0.2;
-        ctx.fillStyle = "#4ade80";
-        const staticCount = Math.floor((width + height) / 80);
-        for (let i = 0; i < staticCount; i++) {
-          const seed = time * 7 + i * 53;
-          const t = ((seed * 16807) % 2147483647) / 2147483647;
-          const edge = i % 4;
-          let px: number, py: number;
-          switch (edge) {
-            case 0: px = x + t * width; py = y; break;
-            case 1: px = x + width; py = y + t * height; break;
-            case 2: px = x + t * width; py = y + height; break;
-            default: px = x; py = y + t * height; break;
-          }
-          ctx.fillRect(px - 1, py - 1, 2, 2);
+        // Inner green glow
+        ctx.strokeStyle = "rgba(74, 222, 128, 0.04)";
+        ctx.lineWidth = 10;
+        ctx.strokeRect(r.x + 5, r.y + 5, r.width - 10, r.height - 10);
+
+        // Static dots
+        ctx.fillStyle = "rgba(74, 222, 128, 0.15)";
+        for (let i = 0; i < 12; i++) {
+          const px = r.x + Math.random() * r.width;
+          const py = r.y + Math.random() * r.height * 0.05;
+          ctx.fillRect(px, py, 2, 2);
+          ctx.fillRect(
+            r.x + Math.random() * r.width,
+            r.y + r.height - Math.random() * r.height * 0.05,
+            2,
+            2,
+          );
         }
       }
 
       ctx.restore();
+    }
+
+    // Render boundary particles
+    for (const p of this.boundaryParticles) {
+      const alpha = p.life / p.maxLife;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.6;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      ctx.restore();
+    }
+  }
+
+  renderDebug(
+    ctx: CanvasRenderingContext2D,
+    cameraX: number,
+    cameraY: number,
+    canvasWidth: number,
+    canvasHeight: number,
+  ): void {
+    const viewLeft = cameraX;
+    const viewRight = cameraX + canvasWidth;
+    const viewTop = cameraY;
+    const viewBottom = cameraY + canvasHeight;
+
+    for (const zone of this.zones) {
+      if (!zone.active) continue;
+
+      const r = zone.rect;
+      if (
+        r.x + r.width < viewLeft ||
+        r.x > viewRight ||
+        r.y + r.height < viewTop ||
+        r.y > viewBottom
+      ) {
+        continue;
+      }
+
+      ctx.save();
+
+      const color =
+        zone.type === "fog"
+          ? "#a855f7"
+          : zone.type === "inversion"
+            ? "#dc2626"
+            : "#4ade80";
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.4;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(r.x, r.y, r.width, r.height);
+      ctx.setLineDash([]);
+
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = color;
+      ctx.font = "10px monospace";
+      const label =
+        zone.type === "fog"
+          ? `FOG d=${zone.density}`
+          : zone.type === "inversion"
+            ? "INVERSION"
+            : "SCRAMBLE";
+      ctx.fillText(`[${zone.id}] ${label}`, r.x + 4, r.y + 12);
+
+      ctx.restore();
+    }
+  }
+
+  // ─── Internal ──────────────────────────────────────────────────
+
+  private generateScrambleMap(zoneId: string): void {
+    // Deterministic seed from zone ID
+    let hash = 0;
+    for (let i = 0; i < zoneId.length; i++) {
+      hash = (hash * 31 + zoneId.charCodeAt(i)) | 0;
+    }
+    // Mix in entry count for re-randomization on re-entry
+    hash = (hash * 16807 + this.frameCount) | 0;
+
+    const directions = [
+      InputAction.Left,
+      InputAction.Right,
+      InputAction.Up,
+      InputAction.Down,
+    ];
+
+    // Fisher-Yates shuffle with seeded random
+    const shuffled = [...directions];
+    let s = Math.abs(hash);
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      s = (s * 16807 + 0) % 2147483647;
+      const j = s % (i + 1);
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    // Ensure at least one direction is actually changed
+    let anyChanged = false;
+    for (let i = 0; i < directions.length; i++) {
+      if (directions[i] !== shuffled[i]) {
+        anyChanged = true;
+        break;
+      }
+    }
+    if (!anyChanged) {
+      // Swap first two to guarantee disruption
+      [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
+    }
+
+    this.scrambleMap.clear();
+    for (let i = 0; i < directions.length; i++) {
+      this.scrambleMap.set(directions[i], shuffled[i]);
+    }
+  }
+
+  private updateBoundaryParticles(): void {
+    // Spawn new particles along zone boundaries
+    if (this.frameCount % 3 === 0) {
+      for (const zone of this.zones) {
+        if (!zone.active) continue;
+
+        const r = zone.rect;
+        const color =
+          zone.type === "fog"
+            ? "#78716c"
+            : zone.type === "inversion"
+              ? "#dc2626"
+              : "#4ade80";
+
+        // Spawn along edges
+        const edge = Math.floor(Math.random() * 4);
+        let px: number, py: number, vx: number, vy: number;
+
+        if (edge === 0) {
+          // Top
+          px = r.x + Math.random() * r.width;
+          py = r.y;
+          vx = (Math.random() - 0.5) * 10;
+          vy = zone.type === "fog" ? Math.random() * 8 : -Math.random() * 8;
+        } else if (edge === 1) {
+          // Bottom
+          px = r.x + Math.random() * r.width;
+          py = r.y + r.height;
+          vx = (Math.random() - 0.5) * 10;
+          vy = zone.type === "fog" ? -Math.random() * 8 : Math.random() * 8;
+        } else if (edge === 2) {
+          // Left
+          px = r.x;
+          py = r.y + Math.random() * r.height;
+          vx = zone.type === "fog" ? Math.random() * 8 : -Math.random() * 8;
+          vy = (Math.random() - 0.5) * 10;
+        } else {
+          // Right
+          px = r.x + r.width;
+          py = r.y + Math.random() * r.height;
+          vx = zone.type === "fog" ? -Math.random() * 8 : Math.random() * 8;
+          vy = (Math.random() - 0.5) * 10;
+        }
+
+        this.boundaryParticles.push({
+          x: px,
+          y: py,
+          vx,
+          vy,
+          life: 1.0,
+          maxLife: 1.0,
+          size: 2 + Math.random() * 2,
+          color,
+        });
+      }
+    }
+
+    // Update existing particles
+    const dt = 1 / 60;
+    for (const p of this.boundaryParticles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt * 0.8;
+    }
+
+    // Remove dead particles, cap count
+    this.boundaryParticles = this.boundaryParticles.filter((p) => p.life > 0);
+    if (this.boundaryParticles.length > 150) {
+      this.boundaryParticles.splice(0, this.boundaryParticles.length - 150);
     }
   }
 }

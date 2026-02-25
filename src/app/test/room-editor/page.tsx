@@ -4,7 +4,9 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
 import { Slider } from "@/components/debug/Slider";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Engine } from "@/engine/core/Engine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { Player } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
 import type { Platform } from "@/engine/physics/TileMap";
@@ -257,6 +259,7 @@ export default function RoomEditorTest() {
   // ─── Engine Mount ──────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const canvas = ctx.canvas;
     canvasRef.current = canvas;
 
@@ -663,6 +666,7 @@ export default function RoomEditorTest() {
 
       {/* Debug Panel */}
       <DebugPanel title="Room Editor">
+        <RenderModeToggle />
         {!playMode ? (
           <>
             <Section title="Tools">

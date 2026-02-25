@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
 import { Slider } from "@/components/debug/Slider";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Engine } from "@/engine/core/Engine";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import type { PlayerParams } from "@/engine/entities/Player";
@@ -11,6 +12,7 @@ import { TileMap } from "@/engine/physics/TileMap";
 import type { Platform } from "@/engine/physics/TileMap";
 import { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { ScreenShake } from "@/engine/core/ScreenShake";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import {
   GravityWellSystem,
   DEFAULT_GRAVITY_WELL_PARAMS,
@@ -287,6 +289,13 @@ export default function AstralAtlasTest() {
         const next = { ...prev, [key]: value };
         // Update base params reference
         baseParamsRef.current[key] = value;
+        // Push to player immediately (gravity-modified params will be
+        // overwritten in the update loop, but non-gravity params like
+        // maxRunSpeed, jumpSpeed, dashSpeed, airAcceleration need this)
+        const player = playerRef.current;
+        if (player) {
+          player.params[key] = value;
+        }
         return next;
       });
     },
@@ -341,6 +350,7 @@ export default function AstralAtlasTest() {
   // ─── Engine Mount ───────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const input = engine.getInput();
@@ -943,6 +953,7 @@ export default function AstralAtlasTest() {
 
         {/* Debug panel */}
         <DebugPanel title="Astral Atlas">
+          <RenderModeToggle />
           {/* Biome Info */}
           <div className="border-b border-zinc-800 pb-2 mb-2">
             <div className="text-xs font-mono text-indigo-400 uppercase tracking-wider mb-1">

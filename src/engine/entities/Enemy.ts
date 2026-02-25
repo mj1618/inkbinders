@@ -3,6 +3,7 @@ import type { StateMachine } from "@/engine/states/StateMachine";
 import type { TileMap } from "@/engine/physics/TileMap";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { ScreenShake } from "@/engine/core/ScreenShake";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import type { Damageable } from "@/engine/combat/types";
 import type { Renderer } from "@/engine/core/Renderer";
 import type { Vec2, Rect } from "@/lib/types";
@@ -275,7 +276,13 @@ export abstract class Enemy extends Entity implements Damageable {
 
     // Body color (white flash on hit)
     const bodyColor = this.hitFlashTimer > 0 ? "#ffffff" : this.color;
-    renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
+    // TODO: sprite rendering for enemies (Task 3 — enemy sprite sheets)
+    if (RenderConfig.useRectangles()) {
+      renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
+    } else if (RenderConfig.getMode() === "sprites") {
+      // No enemy sprites yet — draw rectangles as fallback
+      renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
+    }
 
     // Hitstop glow outline
     if (this.hitstopTimer > 0) {

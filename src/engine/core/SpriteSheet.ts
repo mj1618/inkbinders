@@ -97,8 +97,9 @@ export class SpriteSheet {
    * Frame 0 is top-left, frames go left-to-right then top-to-bottom.
    */
   getFrameRect(frameIndex: number): { sx: number; sy: number; sw: number; sh: number } {
-    const col = frameIndex % this.config.columns;
-    const row = Math.floor(frameIndex / this.config.columns);
+    const clamped = Math.max(0, Math.min(frameIndex, this.config.totalFrames - 1));
+    const col = clamped % this.config.columns;
+    const row = Math.floor(clamped / this.config.columns);
     return {
       sx: col * this.config.frameWidth,
       sy: row * this.config.frameHeight,

@@ -2,10 +2,13 @@ INKBINDERS: The Library That Fights Back
 
 You're a junior archivist in a living library-city. Every "book" is a biome. The library is under a nightly corruption that rewrites rooms, flips symbols, and splices pages together.
 
+PRIMARY GOAL: The game must be challenging, fun, and enjoyable to play. This matters above all else. Every mechanic, every system, every design decision exists to serve this goal. If it isn't fun, it doesn't ship. If it's technically impressive but not enjoyable, it gets cut or reworked. The player's experience of challenge and satisfaction is the north star — not feature count, not technical elegance, not aesthetic polish. A game that is a joy to play with placeholder art beats a beautiful game that feels like a chore. Difficulty should feel fair, rewarding, and compelling — never cheap, never tedious. Failure should teach. Success should feel earned.
+
 Design pillars (in priority order):
-	1.	Movement feel first — the character must feel impossibly good to control. Every jump, dash, and landing should feel tight, responsive, and satisfying before a single enemy or puzzle is added.
-	2.	Editing as progression — you don't unlock movement, you unlock the power to rewrite the world.
-	3.	Cozy-by-day / chaos-by-night — tension loop that drives pacing and retention.
+	1.	Fun and challenge above all — the game must be genuinely enjoyable and satisfying to play. Every system earns its place by making the game more fun. Challenge is the core of the experience — players should feel tested, rewarded, and compelled to keep going.
+	2.	Movement feel first — the character must feel impossibly good to control. Every jump, dash, and landing should feel tight, responsive, and satisfying before a single enemy or puzzle is added. This is what makes challenge feel fair and mastery feel rewarding.
+	3.	Editing as progression — you don't unlock movement, you unlock the power to rewrite the world.
+	4.	Cozy-by-day / chaos-by-night — tension loop that drives pacing and retention.
 
 Trend hooks (done with a new angle):
 	•	Cozy/chaos contrast (players love this tension loop lately).

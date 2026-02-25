@@ -60,21 +60,19 @@ export class AssetManager {
     return this.spriteSheets.get(id);
   }
 
-  /** Load a single image */
+  /** Load a single image. Rejects if the image fails to load. */
   loadImage(id: string, src: string): Promise<HTMLImageElement> {
     const existing = this.images.get(id);
     if (existing) return Promise.resolve(existing);
 
-    return new Promise<HTMLImageElement>((resolve) => {
+    return new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
         this.images.set(id, img);
         resolve(img);
       };
       img.onerror = () => {
-        // Still store the image even if it failed (to avoid retries)
-        this.images.set(id, img);
-        resolve(img);
+        reject(new Error(`Failed to load image "${id}" from ${src}`));
       };
       img.src = src;
     });

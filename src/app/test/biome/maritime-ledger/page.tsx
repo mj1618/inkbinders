@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
 import { Slider } from "@/components/debug/Slider";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Engine } from "@/engine/core/Engine";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import type { PlayerParams } from "@/engine/entities/Player";
@@ -11,6 +12,7 @@ import { TileMap } from "@/engine/physics/TileMap";
 import type { Platform } from "@/engine/physics/TileMap";
 import { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { ScreenShake } from "@/engine/core/ScreenShake";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { MARITIME_LEDGER_THEME } from "@/engine/world/Biome";
 import type { BiomeTheme } from "@/engine/world/Biome";
 import { createMaritimeBackground } from "@/engine/world/BiomeBackground";
@@ -363,6 +365,7 @@ export default function MaritimeLedgerTest() {
   // ─── Engine Mount ───────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const input = engine.getInput();
@@ -916,6 +919,7 @@ export default function MaritimeLedgerTest() {
 
         {/* Debug panel */}
         <DebugPanel title="Maritime Ledger">
+          <RenderModeToggle />
           {/* Biome Info */}
           <div className="border-b border-zinc-800 pb-2 mb-2">
             <div className="text-xs font-mono text-sky-400 uppercase tracking-wider mb-1">

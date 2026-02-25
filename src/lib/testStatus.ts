@@ -36,7 +36,12 @@ export const TEST_PAGES: TestPageConfig[] = [
   { name: "Index Eater", path: "/test/boss/index-eater", phase: 5, phaseName: "Content", status: "in-progress", description: "Third boss — ground-mobile platform devourer" },
   { name: "Astral Atlas", path: "/test/biome/astral-atlas", phase: 5, phaseName: "Content", status: "in-progress", description: "Low-gravity movement texture" },
   { name: "Maritime Ledger", path: "/test/biome/maritime-ledger", phase: 5, phaseName: "Content", status: "in-progress", description: "Current streams movement texture" },
-  { name: "Gothic Errata", path: "/test/biome/gothic-errata", phase: 5, phaseName: "Content", status: "not-started", description: "Fear fog / input inversion" },
+  { name: "Gothic Errata", path: "/test/biome/gothic-errata", phase: 5, phaseName: "Content", status: "in-progress", description: "Fear fog / input inversion" },
   // Phase 6 — Integration
   { name: "Save/Load", path: "/test/save-load", phase: 6, phaseName: "Integration", status: "in-progress", description: "Convex persistence and save slot system" },
+  { name: "HUD & UI", path: "/test/hud", phase: 6, phaseName: "Integration", status: "in-progress", description: "In-game HUD, ability bar, and pause menu" },
+  { name: "World Assembly", path: "/test/world-assembly", phase: 6, phaseName: "Integration", status: "in-progress", description: "Connected world with Scribe Hall hub" },
+  { name: "Sprites", path: "/test/sprites", phase: 6, phaseName: "Integration", status: "in-progress", description: "Sprite rendering and asset pipeline" },
+  { name: "Main Menu & Game Flow", path: "/play", phase: 6, phaseName: "Integration", status: "in-progress", description: "Title screen, save slots, game session, /play route" },
+  { name: "Herbarium Wing", path: "/test/herbarium-wing", phase: 6, phaseName: "Content", status: "in-progress", description: "8 rooms: vine traversal, ability gates, mini-boss" },
 ];

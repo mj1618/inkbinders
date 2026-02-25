@@ -6,6 +6,7 @@ export class AnimationController {
   private currentFrame = 0;
   private frameTimer = 0;
   private finished = false;
+  private fpsOverride: number | null = null;
 
   constructor(spriteSheet: SpriteSheet) {
     this.spriteSheet = spriteSheet;
@@ -45,13 +46,19 @@ export class AnimationController {
     this.finished = false;
   }
 
+  /** Override the FPS for all animations (null = use animation's own FPS) */
+  setFpsOverride(fps: number | null): void {
+    this.fpsOverride = fps;
+  }
+
   /** Update animation timing. Call once per frame with dt in seconds. */
   update(dt: number): void {
     const anim = this.spriteSheet.getAnimation(this.currentAnim);
     if (!anim || anim.frames.length <= 1) return;
 
     this.frameTimer += dt;
-    const frameDuration = 1 / anim.fps;
+    const fps = this.fpsOverride ?? anim.fps;
+    const frameDuration = 1 / fps;
 
     while (this.frameTimer >= frameDuration) {
       this.frameTimer -= frameDuration;

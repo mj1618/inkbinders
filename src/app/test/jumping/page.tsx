@@ -3,8 +3,10 @@
 import { useRef, useState, useCallback } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Slider } from "@/components/debug/Slider";
 import { Engine } from "@/engine/core/Engine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
 import type { PlayerParams } from "@/engine/entities/Player";
@@ -105,6 +107,7 @@ export default function JumpingTest() {
   }, []);
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const tileMap = createTestLevel();
     const player = new Player();
@@ -302,6 +305,7 @@ export default function JumpingTest() {
 
         {/* Debug panel */}
         <DebugPanel title="Jumping">
+          <RenderModeToggle />
           {/* Movement */}
           <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Movement</div>
           <Slider

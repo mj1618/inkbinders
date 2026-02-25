@@ -78,6 +78,44 @@ export const GOTHIC_ERRATA_THEME: BiomeTheme = {
   ],
 };
 
+export const DEFAULT_THEME: BiomeTheme = {
+  id: "default",
+  name: "Default",
+  backgroundColor: "#121212",
+  platformFillColor: "#2a2a2a",
+  platformStrokeColor: "#4a4a4a",
+  ambientParticleColors: ["#a0a0a0", "#808080", "#c0c0c0", "#606060"],
+  ambientParticleRate: 1,
+  foregroundTint: "rgba(255, 255, 255, 0.01)",
+  palette: [
+    "#121212",
+    "#2a2a2a",
+    "#4a4a4a",
+    "#a0a0a0",
+    "#f5f5dc",
+    "#6b6b6b",
+  ],
+};
+
+export const SCRIBE_HALL_THEME: BiomeTheme = {
+  id: "scribe-hall",
+  name: "Scribe Hall",
+  backgroundColor: "#1a1512",
+  platformFillColor: "#3d2e22",
+  platformStrokeColor: "#6b5344",
+  ambientParticleColors: ["#fbbf24", "#f59e0b", "#d97706", "#fcd34d"],
+  ambientParticleRate: 1.5,
+  foregroundTint: "rgba(251, 191, 36, 0.02)",
+  palette: [
+    "#1a1512",
+    "#3d2e22",
+    "#6b5344",
+    "#fbbf24",
+    "#f5f0e6",
+    "#8b7355",
+  ],
+};
+
 export const HERBARIUM_FOLIO_THEME: BiomeTheme = {
   id: "herbarium-folio",
   name: "Herbarium Folio",
@@ -101,3 +139,18 @@ export const HERBARIUM_FOLIO_THEME: BiomeTheme = {
     "#f5f5dc", // Beige/parchment (paper texture)
   ],
 };
+
+// ─── Theme Registry ──────────────────────────────────────────────────
+
+const BIOME_THEME_MAP: Record<string, BiomeTheme> = {
+  default: DEFAULT_THEME,
+  "scribe-hall": SCRIBE_HALL_THEME,
+  "herbarium-folio": HERBARIUM_FOLIO_THEME,
+  "astral-atlas": ASTRAL_ATLAS_THEME,
+  "maritime-ledger": MARITIME_LEDGER_THEME,
+  "gothic-errata": GOTHIC_ERRATA_THEME,
+};
+
+export function getBiomeTheme(biomeId: string): BiomeTheme {
+  return BIOME_THEME_MAP[biomeId] ?? DEFAULT_THEME;
+}

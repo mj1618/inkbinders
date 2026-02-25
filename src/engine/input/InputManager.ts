@@ -12,7 +12,9 @@ export const InputAction = {
   Ability1: "ability1",
   Ability2: "ability2",
   Ability3: "ability3",
+  Ability4: "ability4",
   WeaponSwitch: "weaponSwitch",
+  Pause: "pause",
 } as const;
 
 export type InputAction = (typeof InputAction)[keyof typeof InputAction];
@@ -42,7 +44,9 @@ const DEFAULT_KEY_MAP: Record<string, InputAction> = {
   "/": InputAction.Ability1,
   q: InputAction.Ability2,
   r: InputAction.Ability3,
+  f: InputAction.Ability4,
   k: InputAction.WeaponSwitch,
+  Escape: InputAction.Pause,
 };
 
 export class InputManager {
@@ -50,9 +54,9 @@ export class InputManager {
   private gameKeys: Set<string>;
 
   // Raw key state from events
-  private keysDown = new Set<InputAction>();
-  private keysJustDown = new Set<InputAction>();
-  private keysJustUp = new Set<InputAction>();
+  protected keysDown = new Set<InputAction>();
+  protected keysJustDown = new Set<InputAction>();
+  protected keysJustUp = new Set<InputAction>();
 
   // Per-frame snapshot (stable during a fixed update tick)
   private pressed = new Set<InputAction>();

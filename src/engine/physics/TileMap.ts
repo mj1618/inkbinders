@@ -2,6 +2,7 @@ import type { Rect, Vec2 } from "@/lib/types";
 import type { Renderer } from "@/engine/core/Renderer";
 import { aabbOverlap, aabbIntersection } from "./AABB";
 import { COLORS } from "@/lib/constants";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import type { SurfaceType } from "./Surfaces";
 import { getSurfaceProps } from "./Surfaces";
 
@@ -241,12 +242,15 @@ export class TileMap {
 
   /** Render all platforms */
   render(renderer: Renderer): void {
-    for (const p of this.platforms) {
-      const surfaceProps = getSurfaceProps(p.surfaceType);
-      // Use a darkened version of surface color for fill
-      const fillColor = surfaceColorToFill(surfaceProps.color);
-      renderer.fillRect(p.x, p.y, p.width, p.height, fillColor);
-      renderer.strokeRect(p.x, p.y, p.width, p.height, surfaceProps.color, 1);
+    // Always render rectangles for tiles (no tile sprites yet)
+    // TODO: sprite tile rendering (Task 5)
+    if (RenderConfig.useRectangles() || RenderConfig.getMode() === "sprites") {
+      for (const p of this.platforms) {
+        const surfaceProps = getSurfaceProps(p.surfaceType);
+        const fillColor = surfaceColorToFill(surfaceProps.color);
+        renderer.fillRect(p.x, p.y, p.width, p.height, fillColor);
+        renderer.strokeRect(p.x, p.y, p.width, p.height, surfaceProps.color, 1);
+      }
     }
   }
 }

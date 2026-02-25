@@ -18,8 +18,9 @@ export const TUTORIAL_CORRIDOR: RoomData = {
   platforms: [
     // Floor (full width)
     { x: 0, y: 540 - T, width: 1920, height: T },
-    // Left wall
-    { x: 0, y: 0, width: T, height: 540 },
+    // Left wall (with gap for exit)
+    { x: 0, y: 0, width: T, height: 540 - 128 },
+    { x: 0, y: 540 - 64, width: T, height: 64 },
     // Ceiling
     { x: 0, y: 0, width: 1920, height: T },
     // Stepping platforms
@@ -39,12 +40,26 @@ export const TUTORIAL_CORRIDOR: RoomData = {
     { id: "obs_1", rect: { x: 800, y: 540 - T - T, width: 64, height: T }, type: "spikes", damage: 20, solid: false },
   ],
   exits: [
+    // Left exit → Scribe Hall
+    {
+      direction: "left",
+      zone: { x: 0, y: 540 - 128, width: EXIT_ZONE_DEPTH, height: 64 },
+      targetRoomId: "scribe-hall",
+      targetSpawnPoint: { x: 80, y: 1080 - 64 - T },
+    },
     // Right exit → Vertical Shaft
     {
       direction: "right",
       zone: { x: 1920 - EXIT_ZONE_DEPTH, y: 540 - 128, width: EXIT_ZONE_DEPTH, height: 64 },
       targetRoomId: "vertical-shaft",
       targetSpawnPoint: { x: 64, y: 1080 - 64 - T },
+    },
+    // Down exit → Vine Vestibule (Herbarium Wing)
+    {
+      direction: "bottom",
+      zone: { x: 960 - 80, y: 540 - EXIT_ZONE_DEPTH, width: 160, height: EXIT_ZONE_DEPTH },
+      targetRoomId: "vine-vestibule",
+      targetSpawnPoint: { x: 480, y: T + 16 },
     },
   ],
   gates: [

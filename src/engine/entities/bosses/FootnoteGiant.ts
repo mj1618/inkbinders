@@ -2,6 +2,7 @@ import { StateMachine } from "@/engine/states/StateMachine";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { ScreenShake } from "@/engine/core/ScreenShake";
 import type { Camera } from "@/engine/core/Camera";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import type { Vec2, Rect } from "@/lib/types";
 import type { FootnoteGiantParams } from "./FootnoteGiantParams";
 import { DEFAULT_FOOTNOTE_GIANT_PARAMS } from "./FootnoteGiantParams";
@@ -1128,6 +1129,23 @@ export class FootnoteGiant {
 
     // Don't render if dead
     if (state === "DEAD") return;
+
+    // Sprite mode placeholder (until real boss sprites are added)
+    if (RenderConfig.getMode() === "sprites") {
+      ctx.save();
+      if (state === "DYING") {
+        ctx.globalAlpha = Math.max(0, this.stateTimer / DEATH_DURATION);
+      }
+      ctx.fillStyle = this.hitFlashTimer > 0 ? "#ffffff" : "#4338ca";
+      ctx.fillRect(this.position.x, this.position.y, this.size.x, this.size.y);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("Footnote Giant", this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + 4);
+      ctx.textAlign = "left";
+      ctx.restore();
+      return;
+    }
 
     const bx = this.position.x + this.bodyShakeOffset.x;
     const by = this.position.y + this.bodyShakeOffset.y;

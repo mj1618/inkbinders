@@ -3,8 +3,10 @@
 import { useRef, useState, useCallback } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Slider } from "@/components/debug/Slider";
 import { Engine } from "@/engine/core/Engine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
 import type { Platform } from "@/engine/physics/TileMap";
@@ -236,6 +238,7 @@ export default function MisprintSeraphTest() {
   // ─── Engine Mount ────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const input = engine.getInput();
@@ -835,6 +838,7 @@ export default function MisprintSeraphTest() {
 
         {/* Debug panel */}
         <DebugPanel title="Misprint Seraph">
+          <RenderModeToggle />
           {/* Boss Info (always visible) */}
           <div className="border-b border-zinc-800 pb-2 mb-2">
             <div className="text-xs font-mono text-red-400 uppercase tracking-wider mb-1">

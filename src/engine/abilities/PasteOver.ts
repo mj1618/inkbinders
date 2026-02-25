@@ -158,7 +158,8 @@ export class PasteOver {
    * Returns true if activation succeeded.
    */
   activate(): boolean {
-    if (!this.canActivate || !this.targetPlatform || !this.clipboard) return false;
+    if (!this.targetPlatform || !this.clipboard) return false;
+    if (!this.params.enabled || this.cooldownTimer > 0) return false;
 
     const platform = this.targetPlatform;
 
@@ -170,6 +171,9 @@ export class PasteOver {
       platform.surfaceType = existing.originalSurface;
       platform.isPastedOver = false;
       this.activePastes.splice(existingIdx, 1);
+    } else if (this.activePastes.length >= this.params.maxActivePastes) {
+      // No replacement found and at capacity — cannot activate
+      return false;
     }
 
     // Save original and apply new surface

@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
 import { Slider } from "@/components/debug/Slider";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Engine } from "@/engine/core/Engine";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
@@ -11,6 +12,7 @@ import type { Platform } from "@/engine/physics/TileMap";
 import type { PlayerParams } from "@/engine/entities/Player";
 import { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { ScreenShake } from "@/engine/core/ScreenShake";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { InputAction } from "@/engine/input/InputManager";
 import type { InputManager } from "@/engine/input/InputManager";
 import { CombatSystem } from "@/engine/combat/CombatSystem";
@@ -343,6 +345,7 @@ export default function InkCardsTest() {
   // ─── Engine Mount ─────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const input = engine.getInput();
     const { tileMap, dummy } = createTestLevel();
@@ -539,7 +542,7 @@ export default function InkCardsTest() {
 
       if (modeRef.current !== "play") return;
 
-      if (e.key === "d" || e.key === "D") {
+      if (e.key === "`") {
         showOverlaysRef.current = !showOverlaysRef.current;
         return;
       }
@@ -764,7 +767,8 @@ export default function InkCardsTest() {
       // Update particles
       particleSystem.update(dt);
 
-      // Update screen shake
+      // Update screen shake and apply offset to camera for this frame.
+      // camera.follow() next frame will converge back toward the target.
       const shakeOffset = screenShake.update();
       const camera = engine.getCamera();
       camera.position.x += shakeOffset.offsetX;
@@ -1168,12 +1172,13 @@ export default function InkCardsTest() {
             Tab = Toggle Deck/Play &middot; Arrows = Move/Navigate &middot;
             Z/Space = Jump &middot; X/Shift = Dash &middot; J/Enter =
             Attack/Equip &middot; K = Switch Weapon &middot; C = Craft &middot;
-            Q = Switch Panel &middot; D = Debug
+            Q = Switch Panel &middot; ` = Debug
           </div>
         </div>
 
         {/* Debug panel */}
         <DebugPanel title="Ink Cards">
+          <RenderModeToggle />
           {/* Deck Info (always visible) */}
           <div className="border-b border-zinc-800 pb-2 mb-2">
             <div className="text-xs font-mono text-amber-400 uppercase tracking-wider mb-1">

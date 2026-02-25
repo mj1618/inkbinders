@@ -3,8 +3,10 @@
 import { useRef, useState, useCallback } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Slider } from "@/components/debug/Slider";
 import { Engine } from "@/engine/core/Engine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { ScreenShake } from "@/engine/core/ScreenShake";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
@@ -171,6 +173,7 @@ export default function TransitionsTest() {
   }, []);
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const tileMap = createTestLevel();
@@ -531,6 +534,7 @@ export default function TransitionsTest() {
 
         {/* Debug panel */}
         <DebugPanel title="Transitions">
+          <RenderModeToggle />
           {/* Squash & Stretch */}
           <details open>
             <summary className="text-xs font-mono text-amber-500/80 uppercase tracking-wider cursor-pointer select-none">

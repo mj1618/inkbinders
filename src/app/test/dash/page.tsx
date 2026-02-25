@@ -3,8 +3,10 @@
 import { useRef, useState, useCallback } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Slider } from "@/components/debug/Slider";
 import { Engine } from "@/engine/core/Engine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
 import type { PlayerParams } from "@/engine/entities/Player";
@@ -147,6 +149,7 @@ export default function DashTest() {
   }, []);
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const tileMap = createTestLevel();
@@ -463,6 +466,7 @@ export default function DashTest() {
 
         {/* Debug panel */}
         <DebugPanel title="Dash">
+          <RenderModeToggle />
           {/* Ground Movement */}
           <details>
             <summary className="text-xs font-mono text-zinc-500 uppercase tracking-wider cursor-pointer select-none">

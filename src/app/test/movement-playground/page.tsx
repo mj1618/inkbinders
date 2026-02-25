@@ -3,8 +3,10 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { DebugPanel } from "@/components/debug/DebugPanel";
+import { RenderModeToggle } from "@/components/debug/RenderModeToggle";
 import { Slider } from "@/components/debug/Slider";
 import { Engine } from "@/engine/core/Engine";
+import { RenderConfig } from "@/engine/core/RenderConfig";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
 import { TileMap } from "@/engine/physics/TileMap";
 import type { PlayerParams } from "@/engine/entities/Player";
@@ -435,6 +437,7 @@ export default function MovementPlaygroundTest() {
   // ─── Engine Mount ──────────────────────────────────────────────────────
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
+    RenderConfig.setMode("rectangles");
     const engine = new Engine({ ctx });
     const camera = engine.getCamera();
     const tileMap = createObstacleCourse();
@@ -1160,6 +1163,7 @@ export default function MovementPlaygroundTest() {
 
         {/* Debug panel */}
         <DebugPanel title="Playground">
+          <RenderModeToggle />
           {/* Run Info — always visible */}
           <div className="flex flex-col gap-1 pb-2 border-b border-zinc-800">
             <div className="flex justify-between items-center">

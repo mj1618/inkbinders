@@ -13,19 +13,26 @@ The tech stack is:
 - **Custom game engine** built from scratch in TypeScript using HTML5 Canvas/WebGL
 - **Nano Banana API** for asset generation (API key in `.env.local` as `NANOBANANA_API_KEY`)
 
+## Primary Goal
+
+**The game must be challenging, fun, and enjoyable to play. This is the single most important thing and it matters above all else.** Every design decision, every system, every mechanic exists to serve this goal. If something isn't fun, it doesn't ship. If something is technically impressive but not enjoyable, it gets cut or reworked. The player's experience of challenge and satisfaction is the north star — not feature count, not technical elegance, not aesthetic polish. A game that is a joy to play with placeholder art beats a beautiful game that feels like a chore.
+
 ## Design Pillars (Priority Order)
 
-1. **Movement feel first** — the character must feel impossibly good to control before anything else is built
-2. **Editing as progression** — you unlock the power to rewrite the world, not just movement upgrades
-3. **Cozy-by-day / chaos-by-night** — tension loop that drives pacing and retention
+1. **Fun and challenge above all** — the game must be genuinely enjoyable and satisfying to play. Difficulty should feel fair, rewarding, and compelling — never cheap, never tedious. Every system earns its place by making the game more fun.
+2. **Movement feel first** — the character must feel impossibly good to control before anything else is built. This is the foundation that makes challenge feel fair and mastery feel rewarding.
+3. **Editing as progression** — you unlock the power to rewrite the world, not just movement upgrades
+4. **Cozy-by-day / chaos-by-night** — tension loop that drives pacing and retention
 
 ## Goals & Success Criteria
 
+- **The game is fun to play.** This is the first and final success criterion. Everything below serves this.
 - Every feature is developed and validated in its own isolated test page (`/test/[feature]`) before integration
 - The test page index (`/test`) serves as the project's real progress tracker
 - The "movement milestone" must pass before any content is built: the character controller passes the "empty room test" on `/test/movement-playground`
 - Each test page has visible debug info, real-time tunable sliders, and clear pass criteria
 - Test pages are permanent — they are the regression suite and tuning dashboard
+- Challenge is tuned so that failure teaches and success feels earned — no artificial difficulty, no padding
 
 ## Scope
 

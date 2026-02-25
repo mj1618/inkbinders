@@ -5,6 +5,14 @@ import { TileMap } from "@/engine/physics/TileMap";
 import type { Renderer } from "@/engine/core/Renderer";
 import type { ParticleSystem } from "@/engine/core/ParticleSystem";
 import type { ScreenShake } from "@/engine/core/ScreenShake";
+import { AnimationController } from "@/engine/core/AnimationController";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import {
+  PLAYER_SPRITE_CONFIGS,
+  PLAYER_ANIMATIONS,
+  STATE_TO_ANIMATION,
+} from "@/engine/entities/PlayerSprites";
 import { DEFAULT_GRAVITY, MAX_FALL_SPEED } from "@/lib/constants";
 import { SURFACE_PROPERTIES } from "@/engine/physics/Surfaces";
 import type { SurfaceProperties } from "@/engine/physics/Surfaces";
@@ -231,6 +239,11 @@ export class Player extends Entity {
   currentSurface: SurfaceProperties = SURFACE_PROPERTIES.normal;
   currentWallSurface: SurfaceProperties = SURFACE_PROPERTIES.normal;
 
+  // Sprite rendering
+  private animControllers = new Map<string, AnimationController>();
+  private activeAnimController: AnimationController | null = null;
+  private spritesReady = false;
+
   constructor(params?: Partial<PlayerParams>) {
     super({
       size: {
@@ -245,6 +258,31 @@ export class Player extends Entity {
     this.stateMachine = new StateMachine<Player>(this);
     this.registerStates();
     this.stateMachine.setState(STATE_IDLE);
+
+    this.initSprites();
+  }
+
+  /** Load sprite sheets and create animation controllers (async — sprites load in background) */
+  initSprites(): void {
+    const assetManager = AssetManager.getInstance();
+    assetManager.loadAll(PLAYER_SPRITE_CONFIGS).then(() => {
+      for (const config of PLAYER_SPRITE_CONFIGS) {
+        const sheet = assetManager.getSpriteSheet(config.id);
+        if (sheet) {
+          const anims = PLAYER_ANIMATIONS[config.id];
+          if (anims) {
+            for (const anim of anims) {
+              sheet.addAnimation(anim);
+            }
+          }
+          this.animControllers.set(config.id, new AnimationController(sheet));
+        }
+      }
+      this.spritesReady = true;
+    }).catch(() => {
+      // Sprite loading failed (e.g., headless test environment without DOM Image)
+      // Player falls back to rectangle rendering gracefully
+    });
   }
 
   /** Apply squash-stretch deformation (snap to values, returns to 1.0 over time) */
@@ -1418,6 +1456,19 @@ export class Player extends Entity {
         this.stateMachine.setState(STATE_FALLING);
       }
     }
+
+    // Update sprite animation based on current state
+    if (this.spritesReady) {
+      const mapping = STATE_TO_ANIMATION[this.stateMachine.getCurrentState()];
+      if (mapping) {
+        const controller = this.animControllers.get(mapping.sheetId);
+        if (controller) {
+          this.activeAnimController = controller;
+          controller.play(mapping.animName);
+          controller.update(dt);
+        }
+      }
+    }
   }
 
   override render(renderer: Renderer, interpolation: number): void {
@@ -1437,48 +1488,76 @@ export class Player extends Entity {
       }
     }
 
-    // Draw player rectangle with squash-stretch
-    let bodyColor = "#3b82f6"; // blue
-    if (state === STATE_DASHING) {
-      if (this.isInDashWindup) {
-        bodyColor = "#ffffff"; // white flash during wind-up
+    // Sprite rendering
+    if (RenderConfig.useSprites() && this.spritesReady && this.activeAnimController) {
+      const sheet = this.activeAnimController.getSpriteSheet();
+      if (sheet.isLoaded()) {
+        const ctx = renderer.getContext();
+        const spriteOffsetX = (sheet.config.frameWidth - this.size.x) / 2;
+        const spriteOffsetY = sheet.config.frameHeight - this.size.y;
+        this.activeAnimController.draw(
+          ctx,
+          pos.x - spriteOffsetX,
+          pos.y - spriteOffsetY,
+          !this.facingRight,
+        );
+      }
+    }
+
+    // Rectangle rendering (with squash-stretch + state colors)
+    if (RenderConfig.useRectangles()) {
+      let bodyColor = "#3b82f6"; // blue
+      if (state === STATE_DASHING) {
+        if (this.isInDashWindup) {
+          bodyColor = "#ffffff"; // white flash during wind-up
+        } else {
+          bodyColor = "#f472b6"; // hot pink during active dash
+        }
+      } else if (state === STATE_HARD_LANDING) {
+        bodyColor = "#f59e0b"; // amber during hard landing recovery
+      } else if (state === STATE_RUNNING) {
+        const speedRatio = Math.abs(this.velocity.x) / this.params.maxRunSpeed;
+        if (speedRatio > 0.9) {
+          bodyColor = "#60a5fa"; // lighter blue at max speed
+        }
+      } else if (state === STATE_CROUCHING || state === STATE_CROUCH_SLIDING) {
+        bodyColor = "#2563eb"; // darker blue when crouching
+      } else if (state === STATE_JUMPING) {
+        bodyColor = "#818cf8"; // indigo when jumping
+      } else if (state === STATE_FALLING) {
+        bodyColor = "#6366f1"; // purple when falling
+      } else if (state === STATE_WALL_SLIDING) {
+        bodyColor = "#2dd4bf"; // teal when wall-sliding
+      } else if (state === STATE_WALL_JUMPING) {
+        bodyColor = "#a78bfa"; // violet when wall-jumping
+      }
+
+      // In "both" mode, draw rectangle at 50% alpha
+      const ctx = renderer.getContext();
+      if (RenderConfig.getMode() === "both") {
+        ctx.globalAlpha = 0.5;
+      }
+
+      // Visual rect: centered on collision box, scaled by squash-stretch
+      if (this.params.squashStretchEnabled && (this.scaleX !== 1.0 || this.scaleY !== 1.0)) {
+        const cx = pos.x + this.size.x / 2;
+        const cy = pos.y + this.size.y / 2;
+        const visualW = this.size.x * this.scaleX;
+        const visualH = this.size.y * this.scaleY;
+        renderer.fillRect(cx - visualW / 2, cy - visualH / 2, visualW, visualH, bodyColor);
       } else {
-        bodyColor = "#f472b6"; // hot pink during active dash
+        renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
       }
-    } else if (state === STATE_HARD_LANDING) {
-      bodyColor = "#f59e0b"; // amber during hard landing recovery
-    } else if (state === STATE_RUNNING) {
-      const speedRatio = Math.abs(this.velocity.x) / this.params.maxRunSpeed;
-      if (speedRatio > 0.9) {
-        bodyColor = "#60a5fa"; // lighter blue at max speed
+
+      if (RenderConfig.getMode() === "both") {
+        ctx.globalAlpha = 1;
       }
-    } else if (state === STATE_CROUCHING || state === STATE_CROUCH_SLIDING) {
-      bodyColor = "#2563eb"; // darker blue when crouching
-    } else if (state === STATE_JUMPING) {
-      bodyColor = "#818cf8"; // indigo when jumping
-    } else if (state === STATE_FALLING) {
-      bodyColor = "#6366f1"; // purple when falling
-    } else if (state === STATE_WALL_SLIDING) {
-      bodyColor = "#2dd4bf"; // teal when wall-sliding
-    } else if (state === STATE_WALL_JUMPING) {
-      bodyColor = "#a78bfa"; // violet when wall-jumping
-    }
 
-    // Visual rect: centered on collision box, scaled by squash-stretch
-    if (this.params.squashStretchEnabled && (this.scaleX !== 1.0 || this.scaleY !== 1.0)) {
-      const cx = pos.x + this.size.x / 2;
-      const cy = pos.y + this.size.y / 2;
-      const visualW = this.size.x * this.scaleX;
-      const visualH = this.size.y * this.scaleY;
-      renderer.fillRect(cx - visualW / 2, cy - visualH / 2, visualW, visualH, bodyColor);
-    } else {
-      renderer.fillRect(pos.x, pos.y, this.size.x, this.size.y, bodyColor);
-    }
-
-    // Motion blur ghost for crouch-slide
-    if (state === STATE_CROUCH_SLIDING && Math.abs(this.velocity.x) > this.params.slideMinSpeed) {
-      const ghostOffset = this.facingRight ? -8 : 8;
-      renderer.fillRect(pos.x + ghostOffset, pos.y, this.size.x, this.size.y, "rgba(59, 130, 246, 0.3)");
+      // Motion blur ghost for crouch-slide
+      if (state === STATE_CROUCH_SLIDING && Math.abs(this.velocity.x) > this.params.slideMinSpeed) {
+        const ghostOffset = this.facingRight ? -8 : 8;
+        renderer.fillRect(pos.x + ghostOffset, pos.y, this.size.x, this.size.y, "rgba(59, 130, 246, 0.3)");
+      }
     }
   }
 }

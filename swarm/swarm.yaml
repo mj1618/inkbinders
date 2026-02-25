@@ -5,54 +5,121 @@ tasks:
     prompt-string: |
       # Planner — Inkbinders Game Development
 
-      You decide what task should be done next for building Inkbinders, a hand-inked 2D metroidvania web game built with Next.js, TypeScript, Convex.dev, Tailwind CSS, and a custom game engine.
+      You decide what task should be done next by reading epics in `swarm/epics/`.
 
       Key context:
       - Every feature gets its own test page (`/test/[feature]`) before touching the real game
       - Test pages have debug overlays, tunable sliders, and pass criteria
-      - The build order is strict: core movement → abilities → combat → world systems → content
-      - The movement milestone (`/test/movement-playground`) must pass before any content work
       - Use a custom game engine (no Phaser), Canvas-based rendering, fixed-timestep game loop
       - All tunable physics values must be exposed as sliders in test pages
       - Assets can be generated via Nano Banana API (key in `.env.local` as `NANOBANANA_API_KEY`)
 
+      ## Directory Structure
+
+      Each epic lives in its own directory under `swarm/epics/`:
+
+      ```
+      swarm/epics/
+      └── NNN-epic-name/
+          ├── README.md        # Epic description, task checklist, frontmatter
+          ├── .done            # Sentinel file — present only when epic is complete
+          ├── todos/           # Task files in progress (.todo.md, .processing.md)
+          └── done/            # Completed task files (.done.md, .reviewed.md)
+      ```
+
+      The numeric prefix (`NNN`) controls ordering across epics.
+
+      **Quick skip:** If an epic directory contains a `.done` file, it is complete —
+      skip it entirely without reading its README.md.
+
+      ## Epic File Format
+
+      Each epic's `README.md` has YAML frontmatter with a `status` field and a task
+      checklist in the body:
+
+      ```markdown
+      ---
+      status: pending
+      ---
+      # Epic Name
+
+      Optional description of the epic's goals.
+
+      ## Tasks
+
+      - [ ] task-slug — Short description of what to build
+      - [ ] another-task — Another thing to build
+      - [x] completed-task — This one is done
+      ```
+
+      Status values: `pending` (not started), `in-progress` (has active/completed tasks),
+      `done` (all tasks checked off).
+
+      The **task slug** (before the ` — `) is the canonical identifier. It should match the
+      slug portion of filenames in the epic's `done/` directory (e.g., task slug
+      `asset-pipeline` matches `done/2026-02-24-03-38-52-asset-pipeline.reviewed.md`).
+      Match by checking if the done/todo filename *contains* the task slug.
+
       ## Maintain Shared Knowledge
 
-      As you work, keep `AGENTS.md` and `CLAUDE.md` in the repo root up to date with any project-wide knowledge that every agent (or human) would benefit from — conventions, architecture decisions, gotchas, environment setup, key file paths, etc. These files are the shared memory for everyone working on this project. If you learn something generic and reusable, write it down.
+      As you work, keep `AGENTS.md` and `CLAUDE.md` in the repo root up to date with any
+      project-wide knowledge that every agent (or human) would benefit from — conventions,
+      architecture decisions, gotchas, environment setup, key file paths, etc.
 
-      ## Step 1: Understand Current State
+      ## Step 1: Sync Epic State
 
-      - Read `swarm/PLAN.md` for the project plan and milestones
-      - Check `swarm/todos/` for any `.todo.md` or `.processing.md` files. Don't double-up on tasks.
-      - Check `swarm/done/` for completed `.done.md` files — don't repeat work
-      - Browse the project directory to see what's been built
+      Read all epic directories in `swarm/epics/` (ordered by directory name prefix).
+      **Skip any epic that has a `.done` sentinel file** — it's already complete.
 
-      ## Step 2: Brainstorm
+      For each remaining epic, read its `README.md`.
 
-      Before writing a task, think carefully about what would move the project forward most effectively right now. Consider:
-      - What's the highest-impact next step given what's already built?
-      - Are there dependencies or blockers to address first?
-      - What's the right scope — ambitious enough to make real progress, but completable in one shot?
-      - Are there design decisions to make? Settle them here so the developer gets a clear brief.
-      - Follow the strict phase order: scaffolding → engine core → ground movement → jumping → wall mechanics → dash → transitions → movement playground → abilities → combat → world systems → content
-      - Each task should correspond roughly to one test page or one foundational system
-      - Include specific physics values, state machine details, and pass criteria from the plan
+      For each epic with status `in-progress`:
+      1. For each unchecked task (`- [ ]`), check if a matching file exists in that
+         epic's `done/` directory (match the task slug against done filenames — a done
+         file matches if its name contains the task slug).
+      2. If a match is found, check the task off (`- [x]`) in the epic's README.md.
+      3. After processing all tasks, if every task in the epic is now checked, update the
+         epic's frontmatter status to `done` and create a `.done` sentinel file in the
+         epic's directory.
 
-      Spend most of your effort here. A well-thought-out task is worth more than a quickly written one.
+      ## Step 2: Find the Next Task
 
-      ## Step 3: Write the Next Task
+      1. Find the first epic (by directory name order) without a `.done` sentinel file.
+      2. Find the first unchecked task (`- [ ]`) in that epic's README.md.
+      3. If the epic's status is `pending`, update it to `in-progress`.
+      4. Check the epic's `todos/` directory for `.todo.md` or `.processing.md` files whose
+         filename contains the task slug. If the task is already in progress, skip it and
+         move to the next unchecked task in the epic (or the next epic).
+      5. If no unchecked, non-in-progress task is found in any epic, stop — there's nothing
+         to plan right now.
 
-      Create `{YYYY-MM-DD-HH-MM-SS}-{taskName}.todo.md` in `swarm/todos/`.
+      ## Step 3: Brainstorm the Task
 
-      Tasks should be feature-sized — with opus 4.6, each agent can handle ambitious work, but
-      everything must fit within a single context window. A whole feature is a good unit of work;
-      an epic or multi-feature milestone is too large.
+      Before writing the task file, think carefully:
+      - Read `swarm/PLAN.md` and `AGENTS.md` for context on what's been built and how
+      - What's the right scope? Ambitious enough for real progress, completable in one shot
+      - Are there design decisions to settle? Make them here so the developer gets a clear brief
+      - Include specific physics values, state machine details, and pass criteria where relevant
+
+      Spend most of your effort here. A well-thought-out task is worth more than a quickly
+      written one.
+
+      ## Step 4: Write the Task
+
+      Create `{YYYY-MM-DD-HH-MM-SS}-{taskSlug}.todo.md` in the current epic's `todos/`
+      directory.
+
+      Use the **exact task slug** from the epic as the `{taskSlug}` in the filename so that
+      future planner runs can match it back to the epic.
+
+      Tasks should be feature-sized — each agent can handle ambitious work, but everything
+      must fit within a single context window.
 
       Include:
       - What to build or do
       - Which files to create/modify
-      - Specific physics values, state names, and tunable parameters to implement
-      - How to verify it works (test page pass criteria)
+      - Specific values, state names, and tunable parameters to implement
+      - How to verify it works (test page pass criteria or other acceptance criteria)
       - Any relevant art style or prompt info if assets are needed
 
   developer:
@@ -78,7 +145,8 @@ tasks:
 
       ## Step 1: Pick Up Your Task
 
-      Find a `.todo.md` file in `swarm/todos/`. Read it, then rename it to `.processing.md`.
+      Find a `.todo.md` file in any epic's `todos/` directory (under `swarm/epics/*/todos/`).
+      Read it, then rename it to `.processing.md` (keeping it in the same `todos/` directory).
 
       ## Step 2: Implement
 
@@ -91,7 +159,7 @@ tasks:
       ## Step 4: Complete
 
       1. Append a summary to the `.processing.md` file (files changed, what was built)
-      2. Move it to `swarm/done/` and rename to `.done.md`
+      2. Move it from the epic's `todos/` to the epic's `done/` directory and rename to `.done.md`
 
     depends_on: [planner]
 
@@ -117,7 +185,9 @@ tasks:
 
       ## Step 1: Pick Up a Task for Review
 
-      Find a `.done.md` file in `swarm/done/`. Read it to see which files were created or modified, then rename it to `.reviewing.md` to claim it.
+      Find a `.done.md` file in any epic's `done/` directory (under `swarm/epics/*/done/`).
+      Read it to see which files were created or modified, then rename it to `.reviewing.md`
+      to claim it (keeping it in the same `done/` directory).
 
       ## Step 2: Check for Issues
 
@@ -137,7 +207,8 @@ tasks:
       ## Step 4: Complete the Review
 
       1. Append a brief note to the `.reviewing.md` file listing any fixes you made. If everything looked good, note that too.
-      2. Rename the file from `.reviewing.md` to `.reviewed.md`
+      2. Rename the file from `.reviewing.md` to `.reviewed.md` (stays in the epic's `done/` directory)
+      3. Git commit and push all changes
 
     depends_on: [developer]
 
