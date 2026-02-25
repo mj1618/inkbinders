@@ -64,6 +64,15 @@ export const SCRIBE_HALL: RoomData = {
       targetRoomId: "archive-passage",
       targetSpawnPoint: { x: 64, y: 540 - 64 - T },
     },
+    // Bottom (hidden) → Founder's Vault (secret room, requires all 4 abilities to clear gates)
+    // MUST come before harbor-approach exit — first-match wins in checkExits, and this zone
+    // is a subset of the harbor-approach zone. Gates physically block access until all 4 open.
+    {
+      direction: "bottom",
+      zone: { x: 920, y: 1080 - EXIT_ZONE_DEPTH, width: 80, height: EXIT_ZONE_DEPTH },
+      targetRoomId: "founders-vault",
+      targetSpawnPoint: { x: 480, y: T + 64 },
+    },
     // Bottom exit → Harbor Approach (Maritime Ledger Wing)
     {
       direction: "bottom",
@@ -72,7 +81,37 @@ export const SCRIBE_HALL: RoomData = {
       targetSpawnPoint: { x: 64, y: 540 - 64 - T },
     },
   ],
-  gates: [],
+  gates: [
+    // 4 ability gates side-by-side in the floor gap — all must be opened to reach Founder's Vault
+    {
+      id: "sh_gate_stitch",
+      rect: { x: 880, y: 1060, width: 40, height: 20 },
+      requiredAbility: "margin-stitch",
+      lockedColor: "#22d3ee",
+      opened: false,
+    },
+    {
+      id: "sh_gate_redact",
+      rect: { x: 920, y: 1060, width: 40, height: 20 },
+      requiredAbility: "redaction",
+      lockedColor: "#ef4444",
+      opened: false,
+    },
+    {
+      id: "sh_gate_paste",
+      rect: { x: 960, y: 1060, width: 40, height: 20 },
+      requiredAbility: "paste-over",
+      lockedColor: "#f59e0b",
+      opened: false,
+    },
+    {
+      id: "sh_gate_index",
+      rect: { x: 1000, y: 1060, width: 40, height: 20 },
+      requiredAbility: "index-mark",
+      lockedColor: "#a78bfa",
+      opened: false,
+    },
+  ],
   enemies: [],
   vineAnchors: [],
 };
