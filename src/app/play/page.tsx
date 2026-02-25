@@ -21,7 +21,14 @@ import { IndexMark } from "@/engine/abilities/IndexMark";
 import { DayNightCycle } from "@/engine/world/DayNightCycle";
 import { GameHUD } from "@/engine/ui/GameHUD";
 import { RoomManager } from "@/engine/world/RoomManager";
-import { PRESET_ROOMS, PRESET_ROOM_NAMES } from "@/engine/world/presetRooms";
+import { VineSystem } from "@/engine/world/VineSystem";
+import type { VineAnchor } from "@/engine/world/VineSystem";
+import { GravityWellSystem, DEFAULT_GRAVITY_WELL_PARAMS } from "@/engine/world/GravityWellSystem";
+import type { GravityWell } from "@/engine/world/GravityWellSystem";
+import { CurrentSystem } from "@/engine/world/CurrentSystem";
+import type { CurrentZone } from "@/engine/world/CurrentSystem";
+import { FogSystem } from "@/engine/world/FogSystem";
+import type { FogZone } from "@/engine/world/FogSystem";
 import {
   renderGates,
   renderExitIndicators,
@@ -36,13 +43,33 @@ import {
 } from "@/engine/physics/Obstacles";
 import { GameSession } from "@/engine/core/GameSession";
 import { RenderConfig } from "@/engine/core/RenderConfig";
-import { loadTileSprites } from "@/engine/world/TileSprites";
+import { AssetManager } from "@/engine/core/AssetManager";
+import { TILE_SPRITE_CONFIGS } from "@/engine/world/TileSprites";
+import { PLAYER_SPRITE_CONFIGS } from "@/engine/entities/PlayerSprites";
+import {
+  READER_SPRITE_CONFIGS,
+  BINDER_SPRITE_CONFIGS,
+  PROOFWARDEN_SPRITE_CONFIGS,
+} from "@/engine/entities/enemies/EnemySprites";
+import {
+  GIANT_SPRITE_CONFIGS,
+  SERAPH_SPRITE_CONFIGS,
+  EATER_SPRITE_CONFIGS,
+} from "@/engine/entities/bosses/BossSprites";
+import { COMBAT_VFX_CONFIGS } from "@/engine/combat/CombatSprites";
+import { ABILITY_VFX_SPRITE_CONFIGS } from "@/engine/abilities/AbilitySprites";
+import { HUD_SPRITE_CONFIGS } from "@/engine/ui/HUDSprites";
+import { WORLD_OBJECT_SPRITE_CONFIGS } from "@/engine/world/WorldObjectSprites";
+import { getAllBiomeBackgroundConfigs } from "@/engine/world/BiomeBackgroundSprites";
 import type { LoadedGameState } from "@/engine/save/SaveSystem";
 import { useSaveSlots } from "@/hooks/useSaveSlots";
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS } from "@/lib/constants";
 import type { Vec2 } from "@/lib/types";
 import { GATE_COLORS } from "@/engine/world/Room";
 import type { GateAbility } from "@/engine/world/Room";
+import { HealthPickupManager } from "@/engine/world/HealthPickup";
+import { createFullWorld } from "@/engine/world/demoWorld";
+import { PRESET_ROOM_NAMES } from "@/engine/world/presetRooms";
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -254,10 +281,12 @@ function PlayPageInner() {
 
   const slotParam = searchParams.get("slot");
   const isNew = searchParams.get("new") === "1";
+  const devMode = searchParams.get("dev") === "1";
   const slot = slotParam ? parseInt(slotParam, 10) : 0;
 
   const [isReady, setIsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
 
   const engineRef = useRef<Engine | null>(null);
   const sessionRef = useRef<GameSession | null>(null);
@@ -315,27 +344,75 @@ function PlayPageInner() {
             playerName,
             isNewGame: isNew,
             loadedState: isNew ? null : loadedState,
+            devAllAbilities: devMode,
           });
           sessionRef.current = session;
 
-          // Build rooms map from presets
-          const rooms = new Map<string, typeof PRESET_ROOMS[string]>();
-          for (const [id, data] of Object.entries(PRESET_ROOMS)) {
-            rooms.set(id, data);
-          }
+          // Build rooms map from full world
+          const { worldGraph, rooms } = createFullWorld();
 
           const startingRoomId = session.getStartingRoomId();
-          if (!rooms.has(startingRoomId)) {
-            rooms.set(startingRoomId, PRESET_ROOMS["tutorial-corridor"]);
-          }
 
           const roomManager = new RoomManager({
             rooms,
             startingRoomId,
           });
 
-          // Load tile sprites (placeholders used if images are missing)
-          await loadTileSprites();
+          // Sync saved progression state into room manager
+          const savedState = session.getState();
+          const needsReload =
+            savedState.defeatedBosses.length > 0 ||
+            savedState.openedGates.length > 0;
+          if (savedState.defeatedBosses.length > 0) {
+            roomManager.syncDefeatedBosses(savedState.defeatedBosses);
+          }
+          if (savedState.openedGates.length > 0) {
+            roomManager.syncOpenedGates(savedState.openedGates);
+          }
+          if (needsReload) {
+            // Reload starting room so boss gates and ability gates reflect saved state
+            roomManager.loadRoom(startingRoomId);
+          }
+
+          // Dev-mode world graph validation
+          if (process.env.NODE_ENV === "development") {
+            const validation = worldGraph.validate();
+            if (validation.errors.length > 0) {
+              console.error("[WorldGraph] Validation errors:", validation.errors);
+            }
+            if (validation.warnings.length > 0) {
+              console.warn(`[WorldGraph] ${validation.warnings.length} warnings (${validation.stats.totalRooms} rooms, ${validation.stats.bidirectionalExits} bidirectional exits)`);
+            }
+          }
+
+          // Load all sprite assets (placeholders used if images are missing)
+          const allSpriteConfigs = [
+            ...TILE_SPRITE_CONFIGS,
+            ...PLAYER_SPRITE_CONFIGS,
+            ...READER_SPRITE_CONFIGS,
+            ...BINDER_SPRITE_CONFIGS,
+            ...PROOFWARDEN_SPRITE_CONFIGS,
+            ...GIANT_SPRITE_CONFIGS,
+            ...SERAPH_SPRITE_CONFIGS,
+            ...EATER_SPRITE_CONFIGS,
+            ...COMBAT_VFX_CONFIGS,
+            ...ABILITY_VFX_SPRITE_CONFIGS,
+            ...HUD_SPRITE_CONFIGS,
+            ...WORLD_OBJECT_SPRITE_CONFIGS,
+            ...getAllBiomeBackgroundConfigs(),
+          ];
+
+          const am = AssetManager.getInstance();
+          const loadPromise = am.loadAll(allSpriteConfigs);
+
+          // Poll progress while assets load
+          const progressInterval = setInterval(() => {
+            setLoadProgress(am.getLoadProgress());
+          }, 100);
+
+          await loadPromise;
+          clearInterval(progressInterval);
+          setLoadProgress(am.getLoadProgress());
 
           // Engine setup
           const engine = new Engine({ ctx });
@@ -430,9 +507,9 @@ function PlayPageInner() {
             (e) =>
               new TargetDummy({
                 position: { x: e.position.x, y: e.position.y },
-                health: 3,
+                health: e.type === "boss" ? 10 : 3,
                 color: "#ef4444",
-                respawns: true,
+                respawns: e.type !== "boss",
                 respawnDelay: 300,
                 patrol: !!e.patrolRange,
                 patrolRange: e.patrolRange ?? 0,
@@ -440,6 +517,92 @@ function PlayPageInner() {
                 groundY: e.groundY ?? e.position.y,
               })
           );
+
+          // Track boss dummies → bossId mapping for defeat detection
+          let bossDummies = new Map<string, string>();
+          roomManager.currentEnemies.forEach((e, i) => {
+            if (e.type === "boss" && e.bossId) {
+              bossDummies.set(dummies[i].id, e.bossId);
+            }
+          });
+
+          // Health pickups
+          let pickupManager = new HealthPickupManager(
+            roomManager.currentRoom.healthPickups ?? []
+          );
+
+          // Biome systems
+          let vineSystem: VineSystem | null = null;
+          let gravityWellSystem: GravityWellSystem | null = null;
+          let currentSystem: CurrentSystem | null = null;
+          let fogSystem: FogSystem | null = null;
+
+          // Build initial biome systems for starting room
+          const buildBiomeSystems = (room: typeof roomManager.currentRoom) => {
+            // Vine system (Herbarium Wing)
+            vineSystem = null;
+            if (room.vineAnchors.length > 0) {
+              vineSystem = new VineSystem(
+                room.vineAnchors.map((a): VineAnchor => ({
+                  id: a.id,
+                  position: a.position,
+                  ropeLength: a.ropeLength,
+                  active: true,
+                  type: a.type,
+                }))
+              );
+            }
+
+            // Gravity well system (Astral Atlas)
+            gravityWellSystem = null;
+            if (room.gravityWells?.length) {
+              gravityWellSystem = new GravityWellSystem(
+                room.gravityWells.map((w): GravityWell => ({
+                  id: w.id,
+                  position: w.position,
+                  radius: w.radius,
+                  strength: w.strength,
+                  type: w.type,
+                  active: true,
+                  color: w.type === "attract" ? "#818cf8" : "#f472b6",
+                })),
+                { ...DEFAULT_GRAVITY_WELL_PARAMS },
+              );
+            }
+
+            // Current system (Maritime Ledger)
+            currentSystem = null;
+            if (room.currentZones?.length) {
+              currentSystem = new CurrentSystem(
+                room.currentZones.map((z): CurrentZone => ({
+                  id: z.id,
+                  rect: z.rect,
+                  direction: z.direction,
+                  strength: z.strength,
+                  active: true,
+                  type: z.type,
+                  clockwise: z.clockwise,
+                  gustOnDuration: z.gustOnDuration,
+                  gustOffDuration: z.gustOffDuration,
+                }))
+              );
+            }
+
+            // Fog system (Gothic Errata)
+            fogSystem = null;
+            if (room.fogZones?.length) {
+              fogSystem = new FogSystem(
+                room.fogZones.map((z): FogZone => ({
+                  id: z.id,
+                  rect: z.rect,
+                  type: z.type,
+                  density: z.density,
+                  active: true,
+                }))
+              );
+            }
+          };
+          buildBiomeSystems(roomManager.currentRoom);
 
           // Pause state (managed here, not by GameHUD)
           let paused = false;
@@ -487,9 +650,9 @@ function PlayPageInner() {
               (e) =>
                 new TargetDummy({
                   position: { x: e.position.x, y: e.position.y },
-                  health: 3,
+                  health: e.type === "boss" ? 10 : 3,
                   color: "#ef4444",
-                  respawns: true,
+                  respawns: e.type !== "boss",
                   respawnDelay: 300,
                   patrol: !!e.patrolRange,
                   patrolRange: e.patrolRange ?? 0,
@@ -497,6 +660,24 @@ function PlayPageInner() {
                   groundY: e.groundY ?? e.position.y,
                 })
             );
+
+            // Rebuild boss dummy tracking
+            bossDummies = new Map<string, string>();
+            roomManager.currentEnemies.forEach((e, i) => {
+              if (e.type === "boss" && e.bossId) {
+                bossDummies.set(dummies[i].id, e.bossId);
+              }
+            });
+
+            pickupManager = new HealthPickupManager(
+              roomManager.currentRoom.healthPickups ?? []
+            );
+
+            // Rebuild biome systems for new room
+            buildBiomeSystems(roomManager.currentRoom);
+
+            // Clear fog input remap when leaving a fog room
+            input.setActionRemap(null);
           };
 
           // ─── Update Callback ──────────────────────────────────
@@ -737,6 +918,82 @@ function PlayPageInner() {
             };
             camera.follow(playerCenter, player.velocity, dt);
 
+            // ─── Biome Systems ───────────────────────────────────
+
+            const playerState = player.stateMachine.getCurrentState();
+
+            // Vine system (Herbarium Wing)
+            if (vineSystem) {
+              vineSystem.swayTime += dt;
+              if (vineSystem.isSwinging) {
+                // Update swing physics
+                const newPos = vineSystem.update(
+                  dt,
+                  input.isHeld(InputAction.Left),
+                  input.isHeld(InputAction.Right),
+                  input.isHeld(InputAction.Up),
+                  input.isHeld(InputAction.Down),
+                );
+                player.position.x = newPos.x - player.size.x / 2;
+                player.position.y = newPos.y - player.size.y / 2;
+                player.velocity.x = 0;
+                player.velocity.y = 0;
+
+                // Detach on jump
+                if (input.isPressed(InputAction.Jump)) {
+                  const releaseVel = vineSystem.detach();
+                  player.velocity.x = releaseVel.x;
+                  player.velocity.y = releaseVel.y;
+                }
+              } else {
+                // Check for vine attach when jumping near a vine
+                if (input.isPressed(InputAction.Jump)) {
+                  const nearest = vineSystem.findNearestAnchor(playerCenter);
+                  if (nearest) {
+                    vineSystem.attach(nearest, playerCenter, player.velocity);
+                  }
+                }
+              }
+            }
+
+            // Gravity wells (Astral Atlas)
+            if (gravityWellSystem) {
+              const gMult = gravityWellSystem.params.globalGravityMultiplier;
+              player.params.riseGravity = DEFAULT_PLAYER_PARAMS.riseGravity * gMult;
+              player.params.fallGravity = DEFAULT_PLAYER_PARAMS.fallGravity * gMult;
+              player.params.maxFallSpeed = DEFAULT_PLAYER_PARAMS.maxFallSpeed * gMult;
+
+              if (playerState !== "DASHING" || gravityWellSystem.params.affectsDash) {
+                gravityWellSystem.applyToVelocity(playerCenter, player.velocity, dt);
+              }
+            } else {
+              player.params.riseGravity = DEFAULT_PLAYER_PARAMS.riseGravity;
+              player.params.fallGravity = DEFAULT_PLAYER_PARAMS.fallGravity;
+              player.params.maxFallSpeed = DEFAULT_PLAYER_PARAMS.maxFallSpeed;
+            }
+
+            // Current streams (Maritime Ledger)
+            if (currentSystem) {
+              currentSystem.updateGusts(dt);
+              currentSystem.applyToPlayer(player, dt, player.grounded, player.isDashing);
+              const cameraRect = {
+                x: camera.position.x,
+                y: camera.position.y,
+                width: CANVAS_WIDTH,
+                height: CANVAS_HEIGHT,
+              };
+              currentSystem.updateParticles(dt, particleSystem, cameraRect);
+            }
+
+            // Fog system (Gothic Errata)
+            if (fogSystem) {
+              fogSystem.update(player.getBounds(), player.isDashing);
+              const remap = fogSystem.getActiveRemap();
+              input.setActionRemap(remap);
+            } else {
+              input.setActionRemap(null);
+            }
+
             // ─── Combat ─────────────────────────────────────────
 
             if (input.isPressed(InputAction.WeaponSwitch)) {
@@ -745,7 +1002,6 @@ function PlayPageInner() {
               combat.currentWeapon = selectedWeapon;
             }
 
-            const playerState = player.stateMachine.getCurrentState();
             if (
               input.isPressed(InputAction.Attack) &&
               combat.canAttack(playerState)
@@ -918,6 +1174,9 @@ function PlayPageInner() {
               }
             }
 
+            // Health pickups
+            pickupManager.update(player.getBounds(), playerHealth, dt);
+
             const kb = playerHealth.getKnockbackVelocity();
             if (kb) {
               player.velocity.x += kb.x * dt * 60;
@@ -929,6 +1188,18 @@ function PlayPageInner() {
 
             // Dummies
             for (const d of dummies) d.update(dt);
+
+            // Boss defeat detection
+            for (const d of dummies) {
+              if (!d.isAlive) {
+                const bossId = bossDummies.get(d.id);
+                if (bossId && !session.getState().defeatedBosses.includes(bossId)) {
+                  session.defeatBoss(bossId);
+                  roomManager.openBossGate(bossId);
+                  hud.notify("Boss defeated — gate opened!", "gate");
+                }
+              }
+            }
 
             // Day/Night
             dayNight.update(dt);
@@ -977,8 +1248,25 @@ function PlayPageInner() {
               }
             }
 
+            // Health pickups
+            pickupManager.render(rCtx, camera, time);
+
             // Gates
             renderGates(rCtx, roomManager.currentGates, time);
+
+            // Boss gate (dark pulsing barrier)
+            const bossGateDef = roomManager.currentRoom.bossGate;
+            if (bossGateDef) {
+              const bossRect = roomManager.getBossGateRect(bossGateDef.bossId);
+              if (bossRect) {
+                const pulse = 0.4 + 0.2 * Math.sin(time * 3);
+                rCtx.fillStyle = `rgba(80, 20, 20, ${pulse})`;
+                rCtx.fillRect(bossRect.x, bossRect.y, bossRect.width, bossRect.height);
+                rCtx.strokeStyle = `rgba(200, 40, 40, ${pulse + 0.2})`;
+                rCtx.lineWidth = 2;
+                rCtx.strokeRect(bossRect.x, bossRect.y, bossRect.width, bossRect.height);
+              }
+            }
 
             // Ability pedestal
             const roomPickup = roomManager.currentRoom.abilityPickup;
@@ -993,6 +1281,30 @@ function PlayPageInner() {
 
             // Exit indicators
             renderExitIndicators(rCtx, roomManager.currentRoom.exits, time);
+
+            // Biome system world-space rendering
+            if (vineSystem) {
+              const pc: Vec2 = {
+                x: player.position.x + player.size.x / 2,
+                y: player.position.y + player.size.y / 2,
+              };
+              vineSystem.render(rCtx, false, false, pc, engine.getLastDt());
+            }
+            if (gravityWellSystem) {
+              gravityWellSystem.render(rCtx, camera.position, time, engine.getLastDt());
+            }
+            if (currentSystem) {
+              currentSystem.renderFlow(rCtx);
+            }
+            if (fogSystem) {
+              fogSystem.renderZoneBoundaries(
+                rCtx,
+                camera.position.x,
+                camera.position.y,
+                CANVAS_WIDTH,
+                CANVAS_HEIGHT,
+              );
+            }
 
             // Dummies
             for (const d of dummies) d.render(renderer, 0);
@@ -1034,6 +1346,22 @@ function PlayPageInner() {
           const screenLayerCallback = (
             screenCtx: CanvasRenderingContext2D
           ) => {
+            // Fog overlay (screen-space, rendered before HUD so HUD is visible)
+            if (fogSystem) {
+              const playerScreenX =
+                player.position.x + player.size.x / 2 - camera.position.x;
+              const playerScreenY =
+                player.position.y + player.size.y / 2 - camera.position.y;
+              fogSystem.renderFogOverlay(
+                screenCtx,
+                playerScreenX,
+                playerScreenY,
+                CANVAS_WIDTH,
+                CANVAS_HEIGHT,
+              );
+              fogSystem.renderControlEffects(screenCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
+            }
+
             // HUD (always visible)
             hud.render(screenCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -1092,7 +1420,7 @@ function PlayPageInner() {
         }
       })();
     },
-    [slot, isNew, load, doSave, router]
+    [slot, isNew, devMode, load, doSave, router]
   );
 
   const handleUnmount = useCallback(() => {
@@ -1127,7 +1455,9 @@ function PlayPageInner() {
       {!isReady && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-950">
           <p className="animate-pulse font-mono text-lg text-zinc-400">
-            Loading...
+            {loadProgress.total > 0
+              ? `Loading assets... ${loadProgress.loaded}/${loadProgress.total}`
+              : "Loading..."}
           </p>
           <p className="mt-2 font-mono text-xs text-zinc-600">
             Preparing the library
