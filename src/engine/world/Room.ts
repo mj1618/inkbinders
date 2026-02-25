@@ -4,6 +4,7 @@
 import type { Rect, Vec2 } from "@/lib/types";
 import type { SurfaceType } from "@/engine/physics/Surfaces";
 import type { ObstacleType } from "@/engine/physics/Obstacles";
+import type { FogZoneType } from "@/engine/world/FogSystem";
 
 /** Unique room identifier */
 export type RoomId = string;
@@ -95,6 +96,28 @@ export interface GravityWellDef {
   type: "attract" | "repel";
 }
 
+/** Current zone placement — used by CurrentSystem (Maritime Ledger biome) */
+export interface CurrentZoneDef {
+  id: string;
+  rect: Rect;
+  direction: Vec2;
+  strength: number;
+  type: "stream" | "gust" | "whirlpool" | "jet";
+  clockwise?: boolean;
+  gustOnDuration?: number;
+  gustOffDuration?: number;
+  gustOffset?: number;
+}
+
+/** Fog zone placement — used by FogSystem (Gothic Errata biome) */
+export interface FogZoneDef {
+  id: string;
+  rect: Rect;
+  type: FogZoneType;
+  /** Fog density (0-1). Only meaningful for "fog" type zones. */
+  density: number;
+}
+
 /** Vine anchor placement */
 export interface RoomVineAnchor {
   id: string;
@@ -130,6 +153,8 @@ export interface RoomData {
   vineAnchors: RoomVineAnchor[];
   /** Gravity wells (Astral Atlas biome) */
   gravityWells?: GravityWellDef[];
+  /** Current zones (Maritime Ledger biome) */
+  currentZones?: CurrentZoneDef[];
   /** Optional ability pickup — shrine pedestal */
   abilityPickup?: AbilityPickup;
   /** Optional boss gate — a platform that blocks progress until a boss is defeated */
