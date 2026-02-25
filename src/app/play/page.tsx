@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { Engine } from "@/engine/core/Engine";
 import { Player, DEFAULT_PLAYER_PARAMS } from "@/engine/entities/Player";
-import { TileMap } from "@/engine/physics/TileMap";
 import { ParticleSystem } from "@/engine/core/ParticleSystem";
 import { ScreenShake } from "@/engine/core/ScreenShake";
 import { InputAction } from "@/engine/input/InputManager";
@@ -40,12 +39,14 @@ import {
 } from "@/engine/world/RoomRenderer";
 import type { Obstacle } from "@/engine/physics/Obstacles";
 import type { SurfaceType } from "@/engine/physics/Surfaces";
-import {
-  createSpikes,
-  createHazardZone,
-  checkDamageOverlap,
-} from "@/engine/physics/Obstacles";
+import { checkDamageOverlap } from "@/engine/physics/Obstacles";
 import { GameSession } from "@/engine/core/GameSession";
+import {
+  CardModifierEngine,
+  CraftingSystem,
+  CardRenderer,
+  createCard,
+} from "@/engine/cards";
 import { RenderConfig } from "@/engine/core/RenderConfig";
 import { AssetManager } from "@/engine/core/AssetManager";
 import { TILE_SPRITE_CONFIGS } from "@/engine/world/TileSprites";
@@ -67,7 +68,7 @@ import { WORLD_OBJECT_SPRITE_CONFIGS } from "@/engine/world/WorldObjectSprites";
 import { getAllBiomeBackgroundConfigs } from "@/engine/world/BiomeBackgroundSprites";
 import type { LoadedGameState } from "@/engine/save/SaveSystem";
 import { useSaveSlots } from "@/hooks/useSaveSlots";
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS } from "@/lib/constants";
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from "@/lib/constants";
 import type { Vec2 } from "@/lib/types";
 import { GATE_COLORS } from "@/engine/world/Room";
 import type { GateAbility } from "@/engine/world/Room";
@@ -122,21 +123,6 @@ function getAimDirection(input: InputManager, facingRight: boolean): Vec2 {
 
   const len = Math.sqrt(dx * dx + dy * dy);
   return { x: dx / len, y: dy / len };
-}
-
-function buildObstaclesFromRoom(
-  roomObstacles: { id: string; rect: { x: number; y: number; width: number; height: number }; type: string; damage: number }[]
-): Obstacle[] {
-  return roomObstacles.map((o) => {
-    switch (o.type) {
-      case "spikes":
-        return createSpikes(o.rect, o.damage);
-      case "hazard_zone":
-        return createHazardZone(o.rect, o.damage);
-      default:
-        return createSpikes(o.rect, o.damage);
-    }
-  });
 }
 
 // ─── Custom Pause Menu Renderer ─────────────────────────────────────
@@ -293,6 +279,7 @@ function PlayPageInner() {
 
   const engineRef = useRef<Engine | null>(null);
   const sessionRef = useRef<GameSession | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
   const saveCallbackRef = useRef(save);
   saveCallbackRef.current = save;
 
@@ -495,15 +482,9 @@ function PlayPageInner() {
             }
           );
 
-          // Build initial obstacles
-          let currentObstacles: Obstacle[] = buildObstaclesFromRoom(
-            roomManager.currentObstacles.map((o) => ({
-              id: o.id,
-              rect: o.rect,
-              type: o.type,
-              damage: o.damage,
-            }))
-          );
+          // Use RoomManager's authoritative obstacle list directly
+          // (Redaction modifies .active on these objects in-place)
+          let currentObstacles: Obstacle[] = roomManager.currentObstacles;
 
           // Dummies from room's enemy spawns
           let dummies: TargetDummy[] = roomManager.currentEnemies.map(
@@ -628,6 +609,66 @@ function PlayPageInner() {
           let victoryTriggered = false;
           let victoryScreen: VictoryScreen | null = null;
 
+          // ─── Card System ───────────────────────────────────────
+          const cardEngine = new CardModifierEngine();
+          const crafting = new CraftingSystem();
+
+          // Restore cards from save
+          if (loadedState && !isNew) {
+            for (const cardStr of loadedState.ownedCards) {
+              const [defId, tierStr] = cardStr.split(":");
+              const tier = (parseInt(tierStr) || 1) as 1 | 2 | 3;
+              cardEngine.addToCollection(createCard(defId, tier));
+            }
+            for (const cardStr of loadedState.equippedCards) {
+              const [defId, tierStr] = cardStr.split(":");
+              const tier = (parseInt(tierStr) || 1) as 1 | 2 | 3;
+              const deck = cardEngine.getDeck();
+              const match = deck.collection.find(
+                (c) => c.definitionId === defId && c.tier === tier && !deck.equippedIds.includes(c.id)
+              );
+              if (match) cardEngine.equipCard(match.id);
+            }
+          }
+
+          // Base params snapshot (before any card modifiers)
+          const basePlayerParams = { ...player.params };
+          const baseCombatParams = { ...combat.params };
+          const baseHealthParams = { ...playerHealth.params };
+
+          // Deck UI state
+          let deckMode = false;
+          const deckUI = {
+            selectedCollectionIndex: 0,
+            selectedRecipeIndex: 0,
+            collectionScrollOffset: 0,
+            activePanel: "collection" as "collection" | "crafting",
+          };
+
+          // Track which rooms have had their card collected
+          const collectedCardRooms = new Set<string>();
+          if (loadedState && !isNew) {
+            const loadedCardStrings = new Set(loadedState.ownedCards);
+            for (const [roomId, roomData] of rooms) {
+              if (roomData.cardDrop) {
+                const key = `${roomData.cardDrop.definitionId}:${roomData.cardDrop.tier}`;
+                if (loadedCardStrings.has(key)) {
+                  collectedCardRooms.add(roomId);
+                }
+              }
+            }
+          }
+
+          // Card save sync helper
+          function syncCardStateToSession() {
+            const deck = cardEngine.getDeck();
+            const ownedCards = deck.collection.map((c) => `${c.definitionId}:${c.tier}`);
+            const equippedCards = deck.collection
+              .filter((c) => deck.equippedIds.includes(c.id))
+              .map((c) => `${c.definitionId}:${c.tier}`);
+            session.setCardDeckData({ ownedCards, equippedCards });
+          }
+
           // Time tracking for session
           let time = 0;
           let lastDt = 1 / 60;
@@ -654,14 +695,7 @@ function PlayPageInner() {
               height: roomManager.currentRoom.height,
             };
 
-            currentObstacles = buildObstaclesFromRoom(
-              roomManager.currentObstacles.map((o) => ({
-                id: o.id,
-                rect: o.rect,
-                type: o.type,
-                damage: o.damage,
-              }))
-            );
+            currentObstacles = roomManager.currentObstacles;
 
             dummies = roomManager.currentEnemies.map(
               (e) =>
@@ -703,6 +737,22 @@ function PlayPageInner() {
             input.setActionRemap(null);
           };
 
+          // ─── Deck Mode Key Handling ──────────────────────────
+          let deckTabPressed = false;
+          let deckKeyQueue: string[] = [];
+          const deckKeyHandler = (e: KeyboardEvent) => {
+            if (e.key === "Tab") {
+              e.preventDefault();
+              deckTabPressed = true;
+            }
+            if (deckMode) {
+              e.preventDefault();
+              deckKeyQueue.push(e.key);
+            }
+          };
+          window.addEventListener("keydown", deckKeyHandler);
+          cleanupRef.current = () => window.removeEventListener("keydown", deckKeyHandler);
+
           // ─── Update Callback ──────────────────────────────────
 
           engine.onUpdate((dt) => {
@@ -727,6 +777,79 @@ function PlayPageInner() {
               }
               return;
             }
+
+            // ─── Deck Mode ──────────────────────────────────────
+            if (deckTabPressed) {
+              deckTabPressed = false;
+              if (!paused) {
+                deckMode = !deckMode;
+                if (deckMode) {
+                  deckUI.selectedCollectionIndex = 0;
+                  deckUI.selectedRecipeIndex = 0;
+                  deckUI.activePanel = "collection";
+                }
+              }
+            }
+
+            if (deckMode) {
+              // Process queued keys for deck UI navigation
+              for (const key of deckKeyQueue) {
+                if (key === "Escape") {
+                  deckMode = false;
+                  break;
+                }
+                const deck = cardEngine.getDeck();
+                if (key === "ArrowLeft" || key === "ArrowRight") {
+                  deckUI.activePanel = deckUI.activePanel === "collection" ? "crafting" : "collection";
+                }
+                if (deckUI.activePanel === "collection") {
+                  if (key === "ArrowUp") {
+                    deckUI.selectedCollectionIndex = Math.max(0, deckUI.selectedCollectionIndex - 1);
+                  }
+                  if (key === "ArrowDown") {
+                    deckUI.selectedCollectionIndex = Math.min(
+                      deck.collection.length - 1,
+                      deckUI.selectedCollectionIndex + 1
+                    );
+                  }
+                  if (key === "Enter" && deck.collection[deckUI.selectedCollectionIndex]) {
+                    const card = deck.collection[deckUI.selectedCollectionIndex];
+                    if (deck.equippedIds.includes(card.id)) {
+                      cardEngine.unequipCard(card.id);
+                    } else {
+                      cardEngine.equipCard(card.id);
+                    }
+                  }
+                } else {
+                  // Crafting panel
+                  const recipes = crafting.getAvailableCrafts(deck.collection);
+                  if (key === "ArrowUp") {
+                    deckUI.selectedRecipeIndex = Math.max(0, deckUI.selectedRecipeIndex - 1);
+                  }
+                  if (key === "ArrowDown") {
+                    deckUI.selectedRecipeIndex = Math.min(
+                      recipes.length - 1,
+                      deckUI.selectedRecipeIndex + 1
+                    );
+                  }
+                  if ((key === "c" || key === "C") && recipes[deckUI.selectedRecipeIndex]) {
+                    const recipe = recipes[deckUI.selectedRecipeIndex];
+                    const result = crafting.craft(deck.collection, recipe);
+                    if (result) {
+                      for (const consumed of result.consumed) {
+                        cardEngine.removeFromCollection(consumed.id);
+                      }
+                      cardEngine.addToCollection(result.produced);
+                      hud.notify(`Crafted ${result.produced.name} T${result.produced.tier}!`, "item");
+                    }
+                  }
+                }
+              }
+              deckKeyQueue = [];
+              hud.update(dt);
+              return; // Skip game logic when deck is open
+            }
+            deckKeyQueue = [];
 
             // Save notification decay
             if (saveNotifyFrames > 0) saveNotifyFrames--;
@@ -791,12 +914,14 @@ function PlayPageInner() {
                       break;
                     case "Save Game":
                       session.setHealth(playerHealth.health, playerHealth.maxHealth);
+                      syncCardStateToSession();
                       doSave();
                       saveNotifyFrames = SAVE_NOTIFICATION_FRAMES;
                       hud.notify("Game saved!", "info");
                       break;
                     case "Save & Quit":
                       session.setHealth(playerHealth.health, playerHealth.maxHealth);
+                      syncCardStateToSession();
                       doSave().then(() => {
                         engine.stop();
                         router.push("/");
@@ -853,6 +978,7 @@ function PlayPageInner() {
 
                 // Auto-save on room transition
                 session.setHealth(playerHealth.health, playerHealth.maxHealth);
+                syncCardStateToSession();
                 doSave();
                 hud.notify("Auto-saved", "info");
 
@@ -865,6 +991,7 @@ function PlayPageInner() {
                     defeated.includes("index-eater");
                   if (allBossesDefeated) {
                     // Auto-save final state
+                    syncCardStateToSession();
                     doSave().catch(() => {});
                     victoryTriggered = true;
                     const state = session.getState();
@@ -890,6 +1017,24 @@ function PlayPageInner() {
             const exit = roomManager.checkExits(playerRect);
             if (exit) {
               roomManager.startTransition(exit);
+            }
+
+            // Card pickup check
+            const currentRoom = roomManager.currentRoom;
+            if (currentRoom.cardDrop && !collectedCardRooms.has(currentRoom.id)) {
+              const drop = currentRoom.cardDrop;
+              const dropRect = { x: drop.position.x - 16, y: drop.position.y - 16, width: 32, height: 32 };
+              if (
+                playerRect.x < dropRect.x + dropRect.width &&
+                playerRect.x + playerRect.width > dropRect.x &&
+                playerRect.y < dropRect.y + dropRect.height &&
+                playerRect.y + playerRect.height > dropRect.y
+              ) {
+                const card = createCard(drop.definitionId, drop.tier);
+                cardEngine.addToCollection(card);
+                collectedCardRooms.add(currentRoom.id);
+                hud.notify(`Ink Card Found: ${card.name}`, "item");
+              }
             }
 
             // Check ability pickups
@@ -1005,6 +1150,25 @@ function PlayPageInner() {
               ? vineSystem!.swingVelocity
               : player.velocity;
             camera.follow(playerCenter, camVelocity, dt);
+
+            // ─── Card Stat Modifiers ─────────────────────────────
+            // Apply card modifiers BEFORE biome systems so that gravity wells
+            // and corruption can override gravity params afterwards.
+            if (cardEngine.getDeck().equippedIds.length > 0) {
+              const modifiedPlayer = cardEngine.applyToPlayerParams(basePlayerParams);
+              Object.assign(player.params, modifiedPlayer);
+              player.size.x = player.params.playerWidth;
+
+              const modifiedCombat = cardEngine.applyToCombatParams(baseCombatParams);
+              Object.assign(combat.params, modifiedCombat);
+
+              const modifiedHealth = cardEngine.applyToHealthParams(baseHealthParams);
+              playerHealth.params = modifiedHealth;
+              playerHealth.maxHealth = modifiedHealth.maxHealth;
+              if (playerHealth.health > playerHealth.maxHealth) {
+                playerHealth.health = playerHealth.maxHealth;
+              }
+            }
 
             // ─── Biome Systems ───────────────────────────────────
 
@@ -1208,14 +1372,14 @@ function PlayPageInner() {
 
             // ─── Abilities ──────────────────────────────────────
 
-            // Margin Stitch (skip if vine swinging — both use Ability1/E)
-            const vineSwinging = vineSystem?.isSwinging ?? false;
+            // Margin Stitch (skip if vine swinging or just attached — both use Ability1/E)
+            // Re-check vineSystem.isSwinging live to catch attach that happened earlier this frame
             marginStitch.scanForPairs(
               playerCenter,
               roomManager.currentTileMap
             );
             if (
-              !vineSwinging &&
+              !(vineSystem?.isSwinging) &&
               input.isPressed(InputAction.Ability1) &&
               marginStitch.canActivate
             ) {
@@ -1499,6 +1663,26 @@ function PlayPageInner() {
               );
             }
 
+            // Card drop visual (floating card icon)
+            if (roomManager.currentRoom.cardDrop && !collectedCardRooms.has(roomManager.currentRoom.id)) {
+              const drop = roomManager.currentRoom.cardDrop;
+              const bobY = Math.sin(time * 3) * 4;
+              rCtx.save();
+              rCtx.shadowColor = "#f59e0b";
+              rCtx.shadowBlur = 12;
+              rCtx.fillStyle = "#f59e0b";
+              rCtx.fillRect(drop.position.x - 10, drop.position.y - 14 + bobY, 20, 28);
+              rCtx.strokeStyle = "#fbbf24";
+              rCtx.lineWidth = 1.5;
+              rCtx.strokeRect(drop.position.x - 10, drop.position.y - 14 + bobY, 20, 28);
+              rCtx.shadowBlur = 0;
+              rCtx.fillStyle = "#1e1b4b";
+              rCtx.font = "bold 12px monospace";
+              rCtx.textAlign = "center";
+              rCtx.fillText("\u2726", drop.position.x, drop.position.y + 4 + bobY);
+              rCtx.restore();
+            }
+
             // Exit indicators
             renderExitIndicators(rCtx, roomManager.currentRoom.exits, time);
 
@@ -1639,6 +1823,28 @@ function PlayPageInner() {
             // HUD (always visible)
             hud.render(screenCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
 
+            // Mini equipped cards bar (during gameplay)
+            if (!deckMode && !paused) {
+              const deck = cardEngine.getDeck();
+              const equipped = deck.collection.filter((c) => deck.equippedIds.includes(c.id));
+              if (equipped.length > 0) {
+                const miniY = 32;
+                const miniX = 16;
+                for (let i = 0; i < equipped.length; i++) {
+                  CardRenderer.renderCard(screenCtx, equipped[i], {
+                    x: miniX + i * 36,
+                    y: miniY,
+                    width: 32,
+                    height: 44,
+                    selected: false,
+                    equipped: true,
+                    highlighted: false,
+                    dimmed: false,
+                  });
+                }
+              }
+            }
+
             // Transition overlay
             const tAlpha = roomManager.getTransitionAlpha();
             if (tAlpha > 0) {
@@ -1677,6 +1883,50 @@ function PlayPageInner() {
               }
             }
 
+            // Deck screen overlay
+            if (deckMode) {
+              screenCtx.fillStyle = "rgba(0, 0, 0, 0.85)";
+              screenCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+              screenCtx.fillStyle = "#e2e8f0";
+              screenCtx.font = "bold 24px monospace";
+              screenCtx.textAlign = "center";
+              screenCtx.fillText("INK DECK", CANVAS_WIDTH / 2, 40);
+
+              const deck = cardEngine.getDeck();
+              CardRenderer.renderDeckBar(screenCtx, deck, CANVAS_WIDTH / 2 - 150, 60, -1);
+              CardRenderer.renderCollectionGrid(
+                screenCtx, deck.collection,
+                40, 160, 360, 340,
+                deckUI.collectionScrollOffset,
+                deckUI.activePanel === "collection" ? deckUI.selectedCollectionIndex : -1,
+                new Set(deck.equippedIds)
+              );
+
+              const recipes = crafting.getAvailableCrafts(deck.collection);
+              CardRenderer.renderCraftingPanel(
+                screenCtx, recipes, deck.collection,
+                440, 160, 300, 340,
+                deckUI.activePanel === "crafting" ? deckUI.selectedRecipeIndex : -1
+              );
+
+              const summary = cardEngine.getModifierSummary(basePlayerParams, baseCombatParams, baseHealthParams);
+              CardRenderer.renderStatComparison(screenCtx, summary, 40, CANVAS_HEIGHT - 80, CANVAS_WIDTH - 80);
+
+              if (deckUI.activePanel === "collection" && deck.collection[deckUI.selectedCollectionIndex]) {
+                const selectedCard = deck.collection[deckUI.selectedCollectionIndex];
+                CardRenderer.renderTooltip(screenCtx, selectedCard, CANVAS_WIDTH / 2 - 100, CANVAS_HEIGHT - 180, 200);
+              }
+
+              screenCtx.fillStyle = "#94a3b8";
+              screenCtx.font = "12px monospace";
+              screenCtx.textAlign = "center";
+              screenCtx.fillText(
+                "[Tab] Close  [\u2191\u2193] Navigate  [Enter] Equip/Unequip  [C] Craft  [\u2190\u2192] Switch Panel",
+                CANVAS_WIDTH / 2, CANVAS_HEIGHT - 16
+              );
+            }
+
             // Victory screen overlay (renders on top of everything)
             if (victoryScreen) {
               victoryScreen.render(screenCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -1703,6 +1953,8 @@ function PlayPageInner() {
   );
 
   const handleUnmount = useCallback(() => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
     engineRef.current?.stop();
     engineRef.current = null;
     sessionRef.current = null;
@@ -1752,7 +2004,7 @@ function PlayPageInner() {
         <div className="mt-3 font-mono text-xs text-zinc-600">
           Arrows = Move &middot; Z/Space = Jump &middot; X/Shift = Dash &middot;
           J = Attack &middot; K = Switch &middot; E/Q/R/F = Abilities &middot;
-          ESC = Pause
+          Tab = Deck &middot; ESC = Pause
         </div>
       )}
     </div>
