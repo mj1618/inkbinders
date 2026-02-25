@@ -89,8 +89,8 @@ export default function SpritesTest() {
   }, []);
 
   const handleMount = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Sprites test page defaults to sprites mode
-    RenderConfig.setMode("sprites");
+    // Default to rectangles so placeholder sprites don't distract during testing
+    RenderConfig.setMode("rectangles");
 
     const engine = new Engine({ ctx });
     const tileMap = createTestLevel();

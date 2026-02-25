@@ -10,6 +10,17 @@ import type {
 } from "./types";
 import { CombatParams, DEFAULT_COMBAT_PARAMS } from "./CombatParams";
 import { aabbOverlap, aabbIntersection } from "@/engine/physics/AABB";
+import { RenderConfig } from "@/engine/core/RenderConfig";
+import { AssetManager } from "@/engine/core/AssetManager";
+import {
+  COMBAT_VFX_CONFIGS,
+  COMBAT_VFX_ANIMATIONS,
+  type CombatVfxInstance,
+  createCombatVfx,
+  updateCombatVfx,
+  renderCombatVfx,
+  getSlashRotation,
+} from "./CombatSprites";
 
 /** Diagonal reach multiplier (approximating 45 deg rotation) */
 const DIAGONAL_FACTOR = 0.7;
@@ -53,8 +64,33 @@ export class CombatSystem {
   /** Total frames for current phase (for progress calculation) */
   private phaseTotalFrames = 0;
 
+  /** Active sprite VFX instances (fire-and-forget) */
+  private activeVfx: CombatVfxInstance[] = [];
+
+  /** Whether VFX sprites have been initialized */
+  private spritesInitialized = false;
+
+  /** Tracks whether we already spawned the attack VFX for the current attack */
+  private attackVfxSpawned = false;
+
   constructor(params?: Partial<CombatParams>) {
     this.params = { ...DEFAULT_COMBAT_PARAMS, ...params };
+  }
+
+  /** Load and initialize combat VFX sprite sheets. Safe to call multiple times. */
+  initSprites(): void {
+    if (this.spritesInitialized) return;
+    this.spritesInitialized = true;
+
+    const am = AssetManager.getInstance();
+    am.loadAll(COMBAT_VFX_CONFIGS).then(() => {
+      for (const [sheetId, anims] of Object.entries(COMBAT_VFX_ANIMATIONS)) {
+        const sheet = am.getSpriteSheet(sheetId);
+        if (sheet) {
+          for (const anim of anims) sheet.addAnimation(anim);
+        }
+      }
+    });
   }
 
   /**
@@ -91,6 +127,7 @@ export class CombatSystem {
     this.phaseTotalFrames = this.params.spearWindupFrames;
     this.phaseProgress = 0;
     this.activeHitbox = null;
+    this.attackVfxSpawned = false;
   }
 
   /**
@@ -107,16 +144,22 @@ export class CombatSystem {
     this.phaseTotalFrames = this.params.snapWindupFrames;
     this.phaseProgress = 0;
     this.activeHitbox = null;
+    this.attackVfxSpawned = false;
   }
 
   /**
    * Main update -- advance attack phase timers, produce/clear hitbox.
    * Call every fixed-timestep frame.
    */
-  update(playerBounds: Rect, facingRight: boolean): void {
+  update(playerBounds: Rect, facingRight: boolean, dt?: number): void {
     // Tick cooldown
     if (this.cooldownTimer > 0) {
       this.cooldownTimer--;
+    }
+
+    // Update active VFX (even when attack is idle, VFX may still be playing out)
+    if (dt !== undefined && this.activeVfx.length > 0) {
+      this.activeVfx = updateCombatVfx(this.activeVfx, dt);
     }
 
     if (this.attackPhase === "idle") return;
@@ -151,6 +194,8 @@ export class CombatSystem {
         this.phaseProgress = 0;
         // Create hitbox
         this.createHitbox(playerBounds, facingRight);
+        // Spawn attack VFX on entering active phase
+        this.spawnAttackVfx(playerBounds, facingRight);
         break;
 
       case "active":
@@ -393,59 +438,117 @@ export class CombatSystem {
 
   /**
    * Render attack visuals: wind-up flash, active hitbox, recovery fade.
+   * Also renders any active sprite VFX instances.
    */
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    // Always render active VFX instances (they outlive attack phases)
+    if (RenderConfig.useSprites() && this.activeVfx.length > 0) {
+      renderCombatVfx(ctx, this.activeVfx);
+    }
+
     if (this.attackPhase === "idle") return;
 
     const isSpear = this.currentWeapon === "quill-spear";
 
-    if (this.attackPhase === "windup") {
-      // Flash at the attack origin
-      if (this.activeHitbox) {
+    if (RenderConfig.useRectangles()) {
+      if (this.attackPhase === "windup") {
+        // Flash at the attack origin
+        if (this.activeHitbox) {
+          const r = this.activeHitbox.rect;
+          ctx.globalAlpha = 0.3 + this.phaseProgress * 0.3;
+          ctx.fillStyle = isSpear ? "#dbeafe" : "#4338ca";
+          ctx.fillRect(r.x, r.y, r.width, r.height);
+          ctx.globalAlpha = 1;
+        }
+      } else if (this.attackPhase === "active" && this.activeHitbox) {
         const r = this.activeHitbox.rect;
-        ctx.globalAlpha = 0.3 + this.phaseProgress * 0.3;
-        ctx.fillStyle = isSpear ? "#dbeafe" : "#4338ca";
-        ctx.fillRect(r.x, r.y, r.width, r.height);
-        ctx.globalAlpha = 1;
+
+        if (isSpear) {
+          // Spear thrust visual -- tapered rectangle
+          ctx.fillStyle = "#60a5fa";
+          ctx.globalAlpha = 0.8;
+          ctx.fillRect(r.x, r.y, r.width, r.height);
+
+          // Edge highlight
+          ctx.strokeStyle = "#dbeafe";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(r.x, r.y, r.width, r.height);
+          ctx.globalAlpha = 1;
+        } else {
+          // Ink snap burst -- circular splash
+          const cx = r.x + r.width / 2;
+          const cy = r.y + r.height / 2;
+          const radius = r.width / 2;
+
+          // Dark ink burst
+          ctx.globalAlpha = 0.7;
+          ctx.fillStyle = "#1e1b4b";
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Indigo ring
+          ctx.strokeStyle = "#4338ca";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
       }
-    } else if (this.attackPhase === "active" && this.activeHitbox) {
-      const r = this.activeHitbox.rect;
+    }
+  }
 
-      if (isSpear) {
-        // Spear thrust visual -- tapered rectangle
-        ctx.fillStyle = "#60a5fa";
-        ctx.globalAlpha = 0.8;
-        ctx.fillRect(r.x, r.y, r.width, r.height);
+  /**
+   * Spawn a hit impact VFX at the given world position.
+   * Call when a hit is confirmed (from test page or game loop).
+   */
+  spawnHitVfx(hitPosition: Vec2): void {
+    if (!RenderConfig.useSprites()) return;
+    this.initSprites();
 
-        // Edge highlight
-        ctx.strokeStyle = "#dbeafe";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(r.x, r.y, r.width, r.height);
-        ctx.globalAlpha = 1;
-      } else {
-        // Ink snap burst -- circular splash
-        const cx = r.x + r.width / 2;
-        const cy = r.y + r.height / 2;
-        const radius = r.width / 2;
+    // Hit flash at contact point
+    const flash = createCombatVfx("combat-hit-flash", "flash", hitPosition.x, hitPosition.y);
+    if (flash) this.activeVfx.push(flash);
 
-        // Dark ink burst
-        ctx.globalAlpha = 0.7;
-        ctx.fillStyle = "#1e1b4b";
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.fill();
+    // Hit sparks with slight random offset
+    const offsetX = (Math.random() - 0.5) * 12;
+    const offsetY = (Math.random() - 0.5) * 12;
+    const sparks = createCombatVfx(
+      "combat-hit-sparks",
+      "sparks",
+      hitPosition.x + offsetX,
+      hitPosition.y + offsetY,
+    );
+    if (sparks) this.activeVfx.push(sparks);
+  }
 
-        // Indigo ring
-        ctx.strokeStyle = "#4338ca";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-    } else if (this.attackPhase === "recovery" && this.activeHitbox === null) {
-      // We don't have the hitbox anymore, but we could render a fading effect
-      // at the last position. For now, skip -- the particles handle visual feedback.
+  /** Spawn the attack VFX (slash arc or snap burst) when entering active phase. */
+  private spawnAttackVfx(playerBounds: Rect, facingRight: boolean): void {
+    if (!RenderConfig.useSprites()) return;
+    if (this.attackVfxSpawned) return;
+    this.attackVfxSpawned = true;
+    this.initSprites();
+
+    if (!this.activeHitbox) return;
+    const r = this.activeHitbox.rect;
+    const cx = r.x + r.width / 2;
+    const cy = r.y + r.height / 2;
+
+    if (this.currentWeapon === "quill-spear") {
+      const rotation = getSlashRotation(this.attackDirection);
+      // Rotation alone handles all 8 directions (base sprite faces right).
+      // flipX is not needed — it would incorrectly mirror the rotated sprite.
+      const vfx = createCombatVfx("combat-spear-slash", "slash", cx, cy, {
+        rotation,
+      });
+      if (vfx) this.activeVfx.push(vfx);
+    } else {
+      // Ink snap burst — scale to match snap radius
+      const snapDiameter = this.params.snapRadius * 2;
+      const scale = snapDiameter / 64; // 64 is snap burst frame size
+      const vfx = createCombatVfx("combat-snap-burst", "burst", cx, cy, { scale });
+      if (vfx) this.activeVfx.push(vfx);
     }
   }
 
@@ -530,5 +633,7 @@ export class CombatSystem {
     this.snapTargetId = null;
     this.phaseProgress = 0;
     this.phaseTotalFrames = 0;
+    this.activeVfx = [];
+    this.attackVfxSpawned = false;
   }
 }
